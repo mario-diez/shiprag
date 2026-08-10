@@ -1,6 +1,9 @@
 # Perfil WORKSTATION — PC potente en casa (≈12GB VRAM / 64GB RAM)
 # Modelos locales de calidad media-alta sin irse a un rack de servidor.
 #
+# Si 12 GB se te quedan justos: usa el perfil `balanced` (sin LLM)
+# o deja embedding/reranker en cpu y solo el GGUF en GPU.
+#
 # Flujo:
 #   consulta → router zona → BM25 + embeddings → rerank → 
 #   (emergencia: extractivo) / (normal: semi o Qwen GGUF si enabled)
@@ -31,7 +34,7 @@ models:
     device: cuda
   llm:
     # Pon enabled: true cuando tengas el GGUF en models/llm/
-    enabled: false
+    enabled: true
     # Recomendado 12GB VRAM: Qwen2.5-7B-Instruct Q4_K_M o Q5_K_M
     # (cabrá; deja margen para embeddings/reranker en GPU o muévelos a cpu)
     name_or_path: models/llm/qwen2.5-7b-instruct-q4_k_m.gguf

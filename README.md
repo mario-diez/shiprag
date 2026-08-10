@@ -139,6 +139,7 @@ Cada zona tiene colección propia + reglas (p.ej. emergencias → modo extractiv
 
 ## 6. Uso rápido (PC de casa primero)
 
+> **Cómo lanzar cada perfil:** **[PERFILES.md](PERFILES.md)**  
 > Guía corta: **[QUICKSTART_CASA.md](QUICKSTART_CASA.md)** · Descarga al PC: **[DESCARGA_PC.md](DESCARGA_PC.md)** · Open WebUI: **[docs/OPENWEBUI.md](docs/OPENWEBUI.md)**  
 > Arranque: `bash scripts/start_lite.sh` · Windows: `scripts\start_lite.bat` · Docker: `docker compose up --build` · Con Open WebUI: `docker compose --profile openwebui up --build`
 
@@ -148,7 +149,8 @@ ShipRAG tiene **perfiles de hardware** para no obligarte a montar modelos de ser
 |---|---|---|
 | `lite` (**default**) | Probar flujo sin pesos | Ninguno (BM25 + hash + extractivo) |
 | `home` | Casa con CPU | e5-small + MiniLM (opcionales) |
-| `workstation` | **PC con GPU (~12GB)** | e5-base + bge-reranker + Qwen 7B opcional |
+| `balanced` | **GPU 8–12 GB sin apretar** | e5-base + bge-reranker, sin LLM |
+| `workstation` | PC con GPU + LLM opcional | e5-base + bge-reranker + Qwen 7B opcional |
 | `server` | A bordo / más carga | e5-base + bge-reranker + GGUF opcional |
 
 ```bash

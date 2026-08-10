@@ -1,0 +1,60 @@
+# Perfil BALANCED — punto intermedio (GPU casa sin apretar VRAM)
+# Entre `home` (CPU/ligero) y `workstation` (e5-base+reranker+LLM en GPU).
+#
+# Idea: misma calidad de recuperación que workstation, pero
+#   · embeddings + reranker en GPU (~2–3 GB VRAM; sin LLM)
+#   · LLM apagado por defecto (opcional 1.5B/3B para probar redacción)
+# Ideal en RTX 8–12 GB sin pelear OOM con un 7B.
+#
+# Requiere PyTorch con CUDA (no el wheel +cpu). Si falla CUDA → HashEmbedding.
+
+profile:
+  id: balanced
+  label: Balanced (GPU suave)
+  description: >
+    Retrieve de calidad (e5-base + bge-reranker) en GPU, sin LLM por defecto.
+    Respuestas extractivas/semi-extractivas ancladas a citas.
+    El LLM (si lo activas) solo reformula evidencia en consultas NO críticas.
+
+paths:
+  index_dir: data/indexes/balanced
+
+models:
+  embedding:
+    backend: auto
+    name_or_path: models/embeddings/multilingual-e5-base
+    fallback: hash
+    device: cuda
+    normalize: true
+    dim: 768
+  reranker:
+    backend: auto
+    name_or_path: models/reranker/bge-reranker-base
+    fallback: lexical
+    device: cuda
+  llm:
+    # Opcional. Sin él el sistema YA responde (extractivo + citas).
+    # El LLM NO busca ni inventa: solo reescribe la evidencia recuperada
+    # en consultas normales. En emergencia siempre manda extractivo.
+    enabled: true
+    name_or_path: models/llm/qwen2.5-1.5b-instruct-q4_k_m.gguf
+    n_ctx: 2048
+    n_gpu_layers: 99
+    temperature: 0.1
+    max_tokens: 384
+
+retrieval:
+  lexical_top_k: 50
+  dense_top_k: 50
+  rerank_top_k: 10
+  min_evidence_score: 0.2
+  emergency_min_evidence_score: 0.3
+
+ocr:
+  enabled: true
+
+generation:
+  default_mode: auto
+  emergency_mode: extractive
+  grounding_threshold: 0.4
+  emergency_grounding_threshold: 0.6

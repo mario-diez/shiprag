@@ -10,12 +10,14 @@ No necesariamente. Con tu máquina el punto dulce es:
 |---|---|---|---|
 | Embeddings | `multilingual-e5-base` | No | Suficiente para ES/EN técnico |
 | Reranker | `bge-reranker-base` | No | Mejora mucho precisión@k |
-| LLM | **Qwen2.5-7B-Instruct** GGUF Q4/Q5 | Medio | Cabe en 12GB; opcional |
+| LLM (probar) | **Qwen2.5-1.5B o 3B** GGUF Q4 | Ligero | ~1–2 GB; perfil `balanced` |
+| LLM (serio) | **Qwen2.5-7B-Instruct** GGUF Q4/Q5 | Medio | ~5 GB; perfil `workstation` |
 
-No necesitas un 70B para este caso. Un 7B bien anclado a citas + extractivo en emergencias es más seguro que un modelo enorme inventando.
+No necesitas un 70B. Para **probar** el flujo generative usa 1.5B/3B; el 7B solo si quieres mejor redacción. En emergencias manda el extractivo igual.
 
 `lite` = **sin** redes neuronales (solo para probar flujo).  
-Con 12GB VRAM usa **`workstation`**, no `lite`.
+Con 8–12 GB VRAM **justos** usa **`balanced`** (retrieve bueno, sin LLM).  
+`workstation` solo si quieres meter Qwen GGUF encima.
 
 ## Flujo actual del sistema
 
@@ -76,8 +78,20 @@ Si VRAM se queda justa con embeddings+reranker+LLM a la vez:
 |---|---|---|
 | `lite` | Ninguno | Solo demo rápida sin pesos |
 | `home` | e5-small + MiniLM (CPU) | Portátil / sin GPU |
-| **`workstation`** | e5-base + bge-reranker + Qwen 7B | **Tu PC (12GB)** |
+| **`balanced`** | e5-base + bge-reranker, sin LLM | **12 GB justos (recomendado)** |
+| `workstation` | e5-base + bge-reranker + Qwen 7B | GPU + LLM opcional |
 | `server` | Igual de base, pensado a bordo / más carga | Flota / servidor |
+
+### Instalar LLM en Windows
+
+No uses solo `pip install -e ".[llm]"`: en Windows suele fallar al extraer el tar fuente (rutas largas en `%TEMP%`). Instala wheel precompilado:
+
+```powershell
+pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+# CUDA ejemplo: .../whl/cu121
+```
+
+Ver también [PERFILES.md](../PERFILES.md).
 
 ## Sobre “lo de Qwen que montaste antes”
 

@@ -65,7 +65,7 @@ def run_doctor(cfg: AppConfig | None = None) -> dict[str, Any]:
 
     # Modelos (solo aviso)
     emb = cfg.resolve(cfg.models.embedding.name_or_path) if cfg.models.embedding.name_or_path else None
-    if cfg.profile.id in {"home", "server"}:
+    if cfg.profile.id in {"home", "balanced", "workstation", "server"}:
         if emb and emb.exists():
             checks.append(_ok("embedding_weights", str(emb)))
         else:

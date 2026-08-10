@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CONFIG_PATH = ROOT / "config" / "default.yaml"
 PROFILES_DIR = ROOT / "config" / "profiles"
-KNOWN_PROFILES = ("lite", "home", "workstation", "server")
+KNOWN_PROFILES = ("lite", "home", "balanced", "workstation", "server")
 
 
 class ProfileInfo(BaseModel):

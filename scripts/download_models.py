@@ -18,6 +18,11 @@ PROFILE_MODELS = {
         "embeddings": "intfloat/multilingual-e5-small",
         "reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
     },
+    "balanced": {
+        # Mismos pesos que workstation; perfil balanced usa menos VRAM (sin LLM).
+        "embeddings": "intfloat/multilingual-e5-base",
+        "reranker": "BAAI/bge-reranker-base",
+    },
     "workstation": {
         "embeddings": "intfloat/multilingual-e5-base",
         "reranker": "BAAI/bge-reranker-base",
@@ -34,7 +39,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--profile",
-        choices=["home", "workstation", "server"],
+        choices=["home", "balanced", "workstation", "server"],
         default="home",
         help="Qué juego de modelos descargar (lite no usa modelos)",
     )

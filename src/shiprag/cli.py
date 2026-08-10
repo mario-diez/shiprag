@@ -159,13 +159,13 @@ def cmd_runtime(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="shiprag",
-        description="ShipRAG offline — use --profile lite|home|server según tu hardware",
+        description="ShipRAG offline — use --profile lite|home|balanced|workstation|server",
     )
     p.add_argument("--config", default=None, help="Ruta a config YAML base")
     p.add_argument(
         "--profile",
         default=None,
-        choices=["lite", "home", "workstation", "server"],
+        choices=["lite", "home", "balanced", "workstation", "server"],
         help="Perfil de hardware (default: lite vía config/env SHIPRAG_PROFILE)",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
