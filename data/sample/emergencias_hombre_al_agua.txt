@@ -1,0 +1,39 @@
+# PROCEDIMIENTO DE EMERGENCIA — HOMBRE AL AGUA (MOB)
+# Documento: EMERG-MOB-001
+# Versión: 2.1
+# Zona: Emergencias / Cubierta / Puente
+# Criticidad: CRITICAL
+
+## 1. Objeto
+Establecer las acciones inmediatas a bordo ante un hombre al agua (Man Overboard).
+
+## 2. Aviso inicial
+Cualquier persona que vea a alguien caer al agua debe gritar:
+"¡HOMBRE AL AGUA POR (BORDO DE BABOR / ESTRIBOR)!"
+e indicar continuamente la posición visual de la persona.
+
+## 3. Acciones inmediatas (Puente)
+1. Accionar la alarma de hombre al agua / botón MOB del ECDIS/GPS.
+2. Marcar el waypoint MOB en el sistema de navegación.
+3. Poner el timón hacia el costado por el que cayó la persona (maniobra Williamsson o Scharnow según velocidad y espacio).
+4. Reducir velocidad y preparar recuperación.
+5. Emitir aviso por radiotelefonía interna: "Hombre al agua, todo el personal a estaciones".
+
+PELIGRO: No saltar al agua para el rescate salvo orden expresa del Capitán y con equipo adecuado.
+
+## 4. Acciones de cubierta
+1. Lanzar aro salvavidas con luz y humo hacia la persona.
+2. Mantener contacto visual continuo y señalar con el brazo.
+3. Preparar embarcación de rescate / fast rescue boat según checklist FRB-01.
+4. Tener listo el equipo de recuperación (red, camilla, desfibrilador).
+
+## 5. Comunicaciones
+1. Si la situación lo requiere, preparar llamada de distress en VHF CH16.
+2. Informar a buques próximos la posición MOB.
+3. Registrar hora del evento, posición y acciones en el cuaderno de bitácora.
+
+## 6. Recuperación y post-evento
+1. Recuperar a la persona con el método más seguro según estado de la mar.
+2. Aplicar primeros auxilios / hipotermia según PRO-MED-004.
+3. El Capitán decide si se requiere asistencia externa.
+4. Realizar informe ISM del suceso en un plazo máximo de 24 horas.

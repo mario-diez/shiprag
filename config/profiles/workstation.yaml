@@ -1,0 +1,57 @@
+# Perfil WORKSTATION — PC potente en casa (≈12GB VRAM / 64GB RAM)
+# Modelos locales de calidad media-alta sin irse a un rack de servidor.
+#
+# Flujo:
+#   consulta → router zona → BM25 + embeddings → rerank → 
+#   (emergencia: extractivo) / (normal: semi o Qwen GGUF si enabled)
+
+profile:
+  id: workstation
+  label: Workstation (GPU casa)
+  description: >
+    Para PC de casa con GPU (p.ej. 12GB VRAM). Embeddings + reranker neuronales
+    y LLM Qwen GGUF opcional. En emergencias sigue mandando el modo extractivo.
+
+paths:
+  index_dir: data/indexes/workstation
+
+models:
+  embedding:
+    backend: auto
+    # Multilingual, buen equilibrio calidad/VRAM. Cabe sobrado en 12GB.
+    name_or_path: models/embeddings/multilingual-e5-base
+    fallback: hash
+    device: cuda   # si falla CUDA, pon cpu
+    normalize: true
+    dim: 768
+  reranker:
+    backend: auto
+    name_or_path: models/reranker/bge-reranker-base
+    fallback: lexical
+    device: cuda
+  llm:
+    # Pon enabled: true cuando tengas el GGUF en models/llm/
+    enabled: false
+    # Recomendado 12GB VRAM: Qwen2.5-7B-Instruct Q4_K_M o Q5_K_M
+    # (cabrá; deja margen para embeddings/reranker en GPU o muévelos a cpu)
+    name_or_path: models/llm/qwen2.5-7b-instruct-q4_k_m.gguf
+    n_ctx: 4096
+    n_gpu_layers: 35   # offload a VRAM; baja si OOM
+    temperature: 0.1
+    max_tokens: 512
+
+retrieval:
+  lexical_top_k: 50
+  dense_top_k: 50
+  rerank_top_k: 10
+  min_evidence_score: 0.2
+  emergency_min_evidence_score: 0.3
+
+ocr:
+  enabled: true
+
+generation:
+  default_mode: auto       # si llm.enabled, puede usar generative en no-críticos
+  emergency_mode: extractive
+  grounding_threshold: 0.4
+  emergency_grounding_threshold: 0.6

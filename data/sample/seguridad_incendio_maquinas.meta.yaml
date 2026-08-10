@@ -1,0 +1,9 @@
+# Sidecar de metadatos (opcional)
+doc_id: safe-fire-01
+title: Procedimiento incendio en sala de máquinas
+version: "1.3"
+zone: emergencias
+doc_type: emergency
+language: es
+criticality: critical
+tags: [incendio, sala de máquinas, CO2, seguridad]

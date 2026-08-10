@@ -1,0 +1,23 @@
+# CHECKLIST PUENTE — GUARDIA DE NAVEGACIÓN
+# Documento: BRG-CHK-01
+# Versión: 1.0
+# Zona: Puente
+# Criticidad: HIGH
+
+## 1. Al relevo de guardia
+1. Verificar posición en ECDIS y GPS; comparar con estima.
+2. Comprobar rumbo, velocidad y modo de gobierno (auto/manual).
+3. Revisar peligros a la navegación, derrota activa y XTD.
+4. Verificar estado de radar ARPA (guardias, CPA/TCPA).
+5. Comprobar comunicaciones VHF en CH16 y canal de trabajo.
+6. Revisar estado de luces de navegación.
+7. Leer órdenes permanentes del Capitán y anotaciones del cuaderno.
+
+## 2. Visibilidad reducida
+1. Sonar la señal reglamentaria COLREG.
+2. Encender luces de navegación apropiadas.
+3. Reducir velocidad a la segura.
+4. Avisar a máquinas por posible maniobra.
+5. Situar personal de vigía adicional.
+
+AVISO: En visibilidad reducida, el Oficial de Guardia no abandonará el puente.

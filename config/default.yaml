@@ -1,0 +1,110 @@
+# ShipRAG — configuración base (común a todos los perfiles)
+# El perfil activo se elige con:
+#   shiprag --profile lite|home|server ...
+#   export SHIPRAG_PROFILE=lite
+# Por defecto: lite (seguro para PC de casa sin modelos pesados).
+
+profile:
+  id: lite
+  label: Lite (por defecto)
+  description: Perfil base; se sobrescribe al cargar un profile YAML.
+
+paths:
+  data_dir: data
+  raw_dir: data/raw
+  index_dir: data/indexes/lite
+  log_dir: data/logs
+  models_dir: models
+  sample_dir: data/sample
+
+models:
+  embedding:
+    backend: hash
+    name_or_path: models/embeddings/multilingual-e5-small
+    fallback: hash
+    device: cpu
+    normalize: true
+    dim: 384
+  reranker:
+    backend: lexical
+    name_or_path: models/reranker/bge-reranker-base
+    fallback: lexical
+    device: cpu
+  llm:
+    enabled: false
+    name_or_path: models/llm/model.gguf
+    n_ctx: 4096
+    n_gpu_layers: 0
+    temperature: 0.1
+    max_tokens: 512
+
+retrieval:
+  lexical_top_k: 40
+  dense_top_k: 40
+  rrf_k: 60
+  rerank_top_k: 8
+  min_rrf_score: 0.001
+  min_evidence_score: 0.18
+  emergency_min_evidence_score: 0.28
+
+chunking:
+  max_chars: 1200
+  overlap_chars: 150
+  min_chars: 80
+  prefer_structural: true
+
+ocr:
+  enabled: false
+  lang: spa+eng
+  min_text_chars_per_page: 40
+
+generation:
+  default_mode: extractive
+  emergency_mode: extractive
+  max_citations: 5
+  grounding_threshold: 0.35
+  emergency_grounding_threshold: 0.55
+  clarify_on_low_confidence: true
+
+router:
+  confidence_threshold: 0.45
+  allow_multi_expert: true
+  max_experts: 3
+  fallback_zone: general
+
+zones:
+  - id: puente
+    label: Puente / Navegación
+    keywords: [puente, bridge, navegación, ecdis, colreg, rumbo, radar, gps, timón, guardia, relevo]
+  - id: maquinaria
+    label: Maquinaria / Propulsión
+    keywords: [máquina, maquinaria, motor, propulsión, generador, combustible, aceite, refrigeración, alarma, fo-12, diésel]
+  - id: cubierta
+    label: Cubierta / Carga
+    keywords: [cubierta, carga, amarre, ancla, grúa, container, bodega, lastre, cabo, snap-back]
+  - id: seguridad
+    label: Seguridad / ISM
+    keywords: [seguridad, ism, lsa, chaleco, balsa, drill, incendio, extinción, fuego, co2]
+  - id: emergencias
+    label: Emergencias
+    keywords: [emergencia, sopep, abandono, hombre al agua, man overboard, distress, mayday, blackout, inundación, mob]
+    default_response_mode: extractive
+    criticality: critical
+  - id: electricidad
+    label: Electricidad
+    keywords: [eléctrico, electricidad, cuadro, blackout, ups, batería, cableado, 440v, 220v]
+  - id: comunicaciones
+    label: Comunicaciones / GMDSS
+    keywords: [gmdss, vhf, mf, hf, satélite, distress, epirb, sart, navtex, dsc]
+  - id: general
+    label: General
+    keywords: [manual, documento]
+
+api:
+  host: 127.0.0.1
+  port: 8080
+  cors_origins: []
+
+logging:
+  level: INFO
+  retrieval_trace: true

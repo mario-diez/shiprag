@@ -1,0 +1,32 @@
+# MANUAL DE SALA DE MÁQUINAS — GENERADOR DIÉSEL Nº1
+# Documento: ENG-GEN-01
+# Versión: 1.4
+# Zona: Maquinaria / Electricidad
+# Criticidad: HIGH
+
+## 1. Datos generales
+Generador diésel principal Nº1. Potencia nominal 450 kW. Tensión 440 V / 60 Hz.
+
+## 2. Arranque normal
+1. Verificar nivel de aceite lubricante en la marca de operación.
+2. Verificar nivel de agua de refrigeración en el expansor.
+3. Abrir válvula de combustible de alimentación.
+4. Verificar presión de aire de arranque ≥ 25 bar.
+5. Seleccionar modo LOCAL o REMOTO en el panel.
+6. Pulsar START y verificar que la tensión y frecuencia entran en rango en ≤ 30 s.
+7. Cerrar el interruptor de generador solo tras sincronización correcta.
+
+PRECAUCIÓN: No operar el generador con presión de aceite inferior a 2.5 bar en caliente.
+
+## 3. Parada de emergencia
+1. Pulsar EMERGENCY STOP en el panel local o desde el puente de máquinas.
+2. Verificar cierre de combustible.
+3. Investigar la causa antes de rearrancar.
+4. Registrar el evento en el libro de máquina.
+
+## 4. Alarmas frecuentes
+| Código | Significado | Acción |
+| FO-12 | Baja presión combustible | Verificar filtros y bomba de transferencia |
+| LO-03 | Baja presión aceite | Parar si no se recupera en 10 s |
+| WT-07 | Alta temperatura agua | Reducir carga y verificar circuito de mar |
+| P-255 | Fallo sincronización | No cerrar breaker; revisar AVR |

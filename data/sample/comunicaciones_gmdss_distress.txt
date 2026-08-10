@@ -1,0 +1,28 @@
+# PROCEDIMIENTO GMDSS — LLAMADA DE DISTRESS VHF DSC
+# Documento: COM-GMDSS-01
+# Versión: 1.2
+# Zona: Comunicaciones / Emergencias
+# Criticidad: CRITICAL
+
+## 1. Cuándo usar
+Cuando el buque o personas a bordo están en peligro grave e inminente y requieren asistencia inmediata.
+
+## 2. Procedimiento VHF DSC
+1. Seleccionar VHF DSC.
+2. Pulsar el botón DISTRESS bajo tapa de protección.
+3. Seleccionar la naturaleza del distress si el tiempo lo permite (p.ej. hombre al agua, incendio, abandono).
+4. Pulsar y mantener DISTRESS hasta confirmación de envío.
+5. La radio cambia a CH16; realizar llamada de voz:
+   MAYDAY, MAYDAY, MAYDAY
+   This is [nombre del buque], [call sign], [MMSI]
+   Posición ...
+   Naturaleza del distress ...
+   Asistencia requerida ...
+   Over.
+
+## 3. Después de la alerta
+1. Escuchar CH16 para acuse.
+2. No cancelar la alerta salvo instrucción del Capitán y solo si se emitió por error (seguir procedimiento de cancelación).
+3. Registrar hora y contenido en el diario radio.
+
+PRECAUCIÓN: El uso indebido de alertas de distress está tipificado y puede generar sanciones graves.

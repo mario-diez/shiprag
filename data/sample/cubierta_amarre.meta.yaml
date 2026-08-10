@@ -1,0 +1,9 @@
+# Sidecar amarre
+doc_id: deck-moor-01
+title: Checklist cubierta — faenas de amarre
+version: "1.1"
+zone: cubierta
+doc_type: checklist
+language: es
+criticality: high
+tags: [amarre, snap-back, EPI]

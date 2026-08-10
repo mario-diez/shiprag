@@ -1,0 +1,42 @@
+# Perfil LITE — PC de casa / portátil sin GPU
+# No carga transformers ni LLM. Solo BM25 + hash embeddings + extractivo.
+# Ideal para probar UI, routing, citas y abstención.
+
+profile:
+  id: lite
+  label: Lite (PC casa / sin GPU)
+  description: >
+    Máximo ligero: sin modelos neuronales. Sirve para validar el flujo
+    offline en un ordenador normal. No es calidad de producción a bordo.
+
+paths:
+  # Índices separados para no mezclar con perfiles que usan embeddings reales
+  index_dir: data/indexes/lite
+
+models:
+  embedding:
+    backend: hash          # fuerza HashEmbedding; no intenta cargar ST
+    name_or_path: ""
+    fallback: hash
+    device: cpu
+    normalize: true
+    dim: 384
+  reranker:
+    backend: lexical       # fuerza overlap léxico; sin cross-encoder
+    name_or_path: ""
+    fallback: lexical
+    device: cpu
+  llm:
+    enabled: false
+
+retrieval:
+  lexical_top_k: 30
+  dense_top_k: 20
+  rerank_top_k: 6
+
+ocr:
+  enabled: false           # evita dependencia de Tesseract en primer arranque
+
+generation:
+  default_mode: extractive
+  emergency_mode: extractive

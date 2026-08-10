@@ -1,0 +1,47 @@
+# Perfil HOME — PC de casa con CPU decente (opcionalmente modelos pequeños)
+# Si existen pesos en models/, los usa; si no, cae a hash/lexical sin romper.
+
+profile:
+  id: home
+  label: Home (PC casa / CPU)
+  description: >
+    Para probar en casa con modelos pequeños locales si los has descargado.
+    LLM desactivado por defecto. Todo en CPU.
+
+paths:
+  index_dir: data/indexes/home
+
+models:
+  embedding:
+    backend: auto
+    # Modelo pequeño (~120MB). Descargar con: python scripts/download_models.py --profile home
+    name_or_path: models/embeddings/multilingual-e5-small
+    fallback: hash
+    device: cpu
+    normalize: true
+    dim: 384
+  reranker:
+    backend: auto
+    # Mini reranker CPU-friendly. Si no está, lexical.
+    name_or_path: models/reranker/ms-marco-MiniLM-L-6-v2
+    fallback: lexical
+    device: cpu
+  llm:
+    enabled: false
+    name_or_path: models/llm/model.gguf
+    n_ctx: 2048
+    n_gpu_layers: 0
+    temperature: 0.1
+    max_tokens: 384
+
+retrieval:
+  lexical_top_k: 40
+  dense_top_k: 40
+  rerank_top_k: 8
+
+ocr:
+  enabled: true
+
+generation:
+  default_mode: auto
+  emergency_mode: extractive

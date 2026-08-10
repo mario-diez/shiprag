@@ -1,0 +1,60 @@
+# ShipRAG + Open WebUI (opcional)
+#
+# UI nativa ShipRAG:  http://127.0.0.1:8080
+# Open WebUI:         http://127.0.0.1:3000
+#
+# Arranque:
+#   docker compose up --build
+# Solo ShipRAG:
+#   docker compose up --build shiprag
+# Con Open WebUI:
+#   docker compose --profile openwebui up --build
+
+services:
+  shiprag:
+    build: .
+    image: shiprag:lite
+    container_name: shiprag-lite
+    ports:
+      - "8080:8080"
+    environment:
+      SHIPRAG_PROFILE: lite
+    volumes:
+      - shiprag_indexes:/app/data/indexes
+      - shiprag_raw:/app/data/raw
+      - shiprag_logs:/app/data/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  openwebui:
+    profiles: ["openwebui"]
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: shiprag-openwebui
+    ports:
+      - "3000:8080"
+    environment:
+      # Conexión OpenAI-compatible → ShipRAG (no Ollama)
+      ENABLE_OLLAMA_API: "false"
+      ENABLE_OPENAI_API: "true"
+      OPENAI_API_BASE_URL: http://shiprag:8080/v1
+      OPENAI_API_KEY: shiprag-local
+      WEBUI_AUTH: "false"
+      # Evita que intente salir a internet
+      OFFLINE_MODE: "true"
+    volumes:
+      - openwebui_data:/app/backend/data
+    depends_on:
+      shiprag:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  shiprag_indexes:
+  shiprag_raw:
+  shiprag_logs:
+  openwebui_data:

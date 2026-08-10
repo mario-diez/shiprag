@@ -1,0 +1,29 @@
+# PROCEDIMIENTO INCENDIO EN SALA DE MÁQUINAS
+# Documento: SAFE-FIRE-01
+# Versión: 1.3
+# Zona: Seguridad / Emergencias / Maquinaria
+# Criticidad: CRITICAL
+
+## 1. Detección
+1. Confirmar alarma de incendio y localización en el panel.
+2. Avisar al puente: "Incendio confirmado en sala de máquinas, cuadro/espacio XXX".
+3. Activar señal general de emergencia si el Capitán/OOW lo ordena.
+
+PELIGRO: No abrir puertas de un compartimento cerrado con fuego sin evaluación de backdraft.
+
+## 2. Contención inmediata
+1. Parar ventilación del espacio afectado.
+2. Cerrar dampers y válvulas de combustible remoto si es seguro.
+3. Evacuar personal no esencial del espacio.
+4. Preparar equipo BA y mangueras en el acceso.
+
+## 3. Ataque / extinción
+1. El líder del equipo decide ataque directo o uso de CO2/foam según el espacio.
+2. Si se usa CO2 de sala de máquinas: confirmar evacuación total y contabilizar personal.
+3. Activar descarga solo con orden del Capitán.
+4. Mantener cierre de espacio el tiempo mínimo indicado en el manual del sistema.
+
+## 4. Post-incendio
+1. Ventilar solo cuando el Oficial lo autorice.
+2. Vigilar reignición.
+3. Registrar el evento ISM y notificar a la compañía.

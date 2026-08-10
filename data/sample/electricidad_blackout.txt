@@ -1,0 +1,26 @@
+# PROCEDIMIENTO BLACKOUT — SISTEMA ELÉCTRICO
+# Documento: ELEC-BO-01
+# Versión: 2.0
+# Zona: Electricidad / Maquinaria / Emergencias
+# Criticidad: CRITICAL
+
+## 1. Definición
+Pérdida total o parcial de energía eléctrica en el buque.
+
+## 2. Acciones inmediatas
+1. Verificar si el blackout es total (cuadros principales) o parcial.
+2. Confirmar arranque automático del generador de emergencia.
+3. Verificar suministro a consumidores esenciales: gobierno, comunicaciones GMDSS, alumbrado de emergencia, bomba de incendio de emergencia.
+4. Informar al puente: "Blackout en sala de máquinas / estado del generador de emergencia".
+
+PELIGRO: No intentar reenergizar un cuadro con olor a quemado o disparo diferencial sin aislamiento previo.
+
+## 3. Restauración
+1. Identificar el generador disponible.
+2. Arrancar en local si el automático falló (ver ENG-GEN-01).
+3. Energizar barras esenciales primero.
+4. Sincronizar generadores adicionales antes de recuperar carga no esencial.
+5. Investigar causa raíz (sobrecorriente, cortocircuito, combustible, alarma LO-03, etc.).
+
+## 4. Comunicaciones GMDSS
+Si el blackout afecta a la estación GMDSS, verificar alimentación por UPS/baterías según COM-GMDSS-02.

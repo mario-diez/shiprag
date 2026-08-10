@@ -1,0 +1,31 @@
+# PROCEDIMIENTO SOPEP — DERRAME DE HIDROCARBUROS
+# Documento: SOPEP-001
+# Versión: 3.0
+# Zona: Emergencias / Cubierta / Maquinaria
+# Criticidad: CRITICAL
+
+## 1. Alcance
+Procedimiento del Shipboard Oil Pollution Emergency Plan (SOPEP) ante derrame de hidrocarburos a bordo o al mar.
+
+## 2. Detección y alarma
+1. Detener la transferencia de combustible / lastre si está en curso.
+2. Activar alarma de emergencia de contaminación.
+3. Informar inmediatamente al Oficial de Guardia y al Capitán.
+
+AVISO: Toda descarga de hidrocarburos al mar está prohibida salvo las excepciones MARPOL expresamente autorizadas.
+
+## 3. Contención
+1. Cerrar válvulas del sistema afectado.
+2. Desplegar barreras absorbentes / contención según inventario SOPEP anexo A.
+3. Evitar que el producto alcance imbornales abiertos; taponar si es necesario.
+4. Usar EPI completo (guantes, gafas, traje resistente a hidrocarburos).
+
+## 4. Notificación
+1. Notificar a la autoridad costera competente según lista de contactos del SOPEP.
+2. Completar el informe inicial con: hora, posición, tipo de producto, cantidad estimada, acciones tomadas.
+3. Informar a la compañía (DPA) sin demora.
+
+## 5. Limpieza
+1. Recoger producto con materiales absorbentes aprobados.
+2. Almacenar residuos en contenedores estancos etiquetados.
+3. No usar dispersantes salvo autorización expresa de la autoridad.

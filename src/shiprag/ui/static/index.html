@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ShipRAG — Asistente documental de buque</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="bg"></div>
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"></div>
+      <div>
+        <h1>ShipRAG</h1>
+        <p class="tag">Consulta offline · Manuales · Emergencias · Trazabilidad</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="profile-badge" id="profile-badge">perfil…</span>
+      <div class="status" id="health">conectando…</div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel query-panel">
+      <h2>Consulta</h2>
+      <div class="examples" id="examples">
+        <button type="button" class="chip" data-q="procedimiento hombre al agua" data-em="1">MOB</button>
+        <button type="button" class="chip" data-q="derrame de hidrocarburos SOPEP" data-em="1">SOPEP</button>
+        <button type="button" class="chip" data-q="alarma FO-12 del generador" data-em="0">FO-12</button>
+        <button type="button" class="chip" data-q="acciones blackout eléctrico" data-em="1">Blackout</button>
+        <button type="button" class="chip" data-q="llamada distress VHF DSC" data-em="1">GMDSS</button>
+        <button type="button" class="chip" data-q="receta de paella" data-em="0">Abstenerse</button>
+      </div>
+      <form id="query-form">
+        <label class="sr">Pregunta</label>
+        <textarea id="query" rows="3" placeholder="Ej. Procedimiento de hombre al agua — primeros pasos"></textarea>
+        <div class="row">
+          <label>
+            Zona
+            <select id="zone">
+              <option value="">Auto (router)</option>
+            </select>
+          </label>
+          <label>
+            Modo
+            <select id="mode">
+              <option value="auto">Auto</option>
+              <option value="extractive">Extractivo</option>
+              <option value="citations_only">Solo citas</option>
+              <option value="semi">Semi-extractivo</option>
+              <option value="generative">Generativo*</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn primary">Consultar</button>
+          <button type="button" class="btn danger" id="btn-emergency">EMERGENCIA · solo citas</button>
+        </div>
+        <label class="check subtle">
+          <input type="checkbox" id="emergency" />
+          Marcar como emergencia (extractivo)
+        </label>
+        <p class="hint">* Generativo solo si hay GGUF local. En emergencia el sistema no inventa pasos.</p>
+      </form>
+
+      <div class="answer" id="answer-box" hidden>
+        <div class="answer-meta">
+          <span id="status-pill" class="pill"></span>
+          <span id="conf"></span>
+          <span id="zones-used"></span>
+        </div>
+        <pre id="answer"></pre>
+        <p id="clarify" class="clarify" hidden></p>
+      </div>
+    </section>
+
+    <section class="panel side">
+      <h2>Ingesta</h2>
+      <form id="ingest-form">
+        <input type="file" id="file" required />
+        <label>
+          Zona
+          <select id="ingest-zone">
+            <option value="">Inferir</option>
+          </select>
+        </label>
+        <button type="submit" class="btn">Subir e indexar</button>
+        <pre id="ingest-result" class="mini"></pre>
+      </form>
+
+      <h2>Fuentes</h2>
+      <div id="citations" class="citations empty">Sin resultados aún.</div>
+
+      <h2>Trace de recuperación</h2>
+      <pre id="trace" class="mini empty">—</pre>
+    </section>
+  </main>
+
+  <footer>
+    <span>Operación air-gapped · Sin telemetría · Abstenerse &gt; inventar</span>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

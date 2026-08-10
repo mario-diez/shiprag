@@ -1,0 +1,24 @@
+# CHECKLIST CUBIERTA — FAENAS DE AMARRE
+# Documento: DECK-MOOR-01
+# Versión: 1.1
+# Zona: Cubierta
+# Criticidad: HIGH
+
+## 1. Antes de la maniobra
+1. Briefing del Oficial de Cubierta con el equipo de amarre.
+2. Verificar comunicación por walkie con el puente.
+3. Inspeccionar cabos, amarras, winches y protectores.
+4. Todo el personal con EPI (casco, calzado, chaleco, guantes).
+
+AVISO: No permanecer en la zona de latigazo (snap-back) de los cabos.
+
+## 2. Durante el amarre
+1. Operar winches solo bajo orden clara.
+2. Mantener pies fuera de bucles de cabo.
+3. Informar al puente de cada amarra hecha firme.
+4. Usar protectores en cantos vivos.
+
+## 3. Al finalizar
+1. Revisar tensiones y firmes.
+2. Recoger material suelto.
+3. Reportar daños o desgaste al Oficial.
