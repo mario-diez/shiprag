@@ -2,6 +2,8 @@
 
 Agente: https://cursor.com/agents/bc-019fd85c-33c7-7fd0-b67c-ef423c4ba2a3
 
+Repo GitHub: https://github.com/mario-diez/shiprag.git
+
 ## Opción A — Descargar desde Cursor (recomendado)
 
 1. En el PC, abre el enlace del agente (arriba).
