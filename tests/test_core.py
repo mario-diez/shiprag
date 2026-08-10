@@ -51,7 +51,7 @@ def test_router_emergency_mob():
     r = QueryRouter(load_config())
     d = r.route("hombre al agua por estribor, ¿qué hago?")
     assert d.emergency is True
-    assert Zone.EMERGENCIAS in d.zones
+    assert d.zones == [Zone.EMERGENCIAS]
     assert d.suggested_mode == ResponseMode.EXTRACTIVE
 
 
@@ -60,6 +60,19 @@ def test_router_maquinaria_code():
     d = r.route("alarma FO-12 del generador en sala de máquinas")
     assert Zone.MAQUINARIA in d.zones or Zone.ELECTRICIDAD in d.zones
 
+
+def test_router_dp_zone():
+    r = QueryRouter(load_config())
+    d = r.route("qué es el watch circle en DP y thruster allocation")
+    assert d.emergency is False
+    assert Zone.POSICIONAMIENTO_DINAMICO in d.zones
+
+
+def test_router_emergency_overrides_dp_blackout():
+    r = QueryRouter(load_config())
+    d = r.route("blackout parcial en thrusters durante DP")
+    assert d.emergency is True
+    assert d.zones == [Zone.EMERGENCIAS]
 
 def test_structural_chunker_keeps_procedure(tmp_cfg):
     sample = Path(__file__).resolve().parents[1] / "data" / "sample" / "emergencias_hombre_al_agua.txt"

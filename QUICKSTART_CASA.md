@@ -49,19 +49,27 @@ shiprag --profile lite smoke
 
 | Pregunta | Esperado |
 |---|---|
-| procedimiento hombre al agua | citas MOB, pasos puente |
-| alarma FO-12 del generador | FO-12 / combustible |
-| derrame SOPEP | contención + notificación |
-| blackout eléctrico | generador emergencia |
+| procedimiento hombre al agua | zona emergencias, citas MOB, pasos puente |
+| alarma FO-12 del generador | zona maquinaria, FO-12 / combustible |
+| derrame SOPEP | emergencias, contención + notificación |
+| watch circle en DP | zona `posicionamiento_dinamico` (sin corpus aún puede abstenerse) |
+| blackout eléctrico | emergencias (override por patrón `blackout`) |
 | receta de paella | abstención / no encontrado |
 
 ## 5. Subir de nivel (opcional)
 
 ```bash
+# Casa CPU
 python scripts/download_models.py --profile home
 shiprag --profile home ingest data/sample
 shiprag --profile home serve
+
+# Prototipo GPU (~12 GB) — distinto del stack a bordo
+python scripts/download_models.py --profile workstation
+shiprag --profile workstation serve
 ```
+
+Más detalle: [docs/NOVEDADES.md](docs/NOVEDADES.md) · [PERFILES.md](PERFILES.md)
 
 ## 6. Empaquetar / copiar
 

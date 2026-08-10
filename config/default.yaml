@@ -22,6 +22,7 @@ models:
     backend: hash
     name_or_path: models/embeddings/multilingual-e5-small
     fallback: hash
+    fallback_name_or_path: ""
     device: cpu
     normalize: true
     dim: 384
@@ -29,14 +30,24 @@ models:
     backend: lexical
     name_or_path: models/reranker/bge-reranker-base
     fallback: lexical
+    fallback_name_or_path: ""
     device: cpu
   llm:
     enabled: false
     name_or_path: models/llm/model.gguf
+    fallback_name_or_path: ""
     n_ctx: 4096
     n_gpu_layers: 0
     temperature: 0.1
     max_tokens: 512
+  verifier:
+    # backend: lexical | auto | nli
+    backend: lexical
+    name_or_path: models/verifier/mDeBERTa-v3-base-mnli-xnli
+    fallback: lexical
+    device: cpu
+    entailment_threshold: 0.5
+    emergency_entailment_threshold: 0.6
 
 retrieval:
   lexical_top_k: 40
@@ -67,6 +78,8 @@ generation:
   clarify_on_low_confidence: true
 
 router:
+  # backend: auto | keywords | embedding
+  backend: auto
   confidence_threshold: 0.45
   allow_multi_expert: true
   max_experts: 3
@@ -76,29 +89,106 @@ zones:
   - id: puente
     label: Puente / Navegación
     keywords: [puente, bridge, navegación, ecdis, colreg, rumbo, radar, gps, timón, guardia, relevo]
+    examples:
+      - Checklist de relevo de guardia en el puente
+      - Alarmas de off-track en ECDIS
+      - Reglas COLREG en cruce de tráfico
+      - Cómo fijar rumbo y verificar GPS
+      - Procedimiento de guardia en el bridge
   - id: maquinaria
     label: Maquinaria / Propulsión
     keywords: [máquina, maquinaria, motor, propulsión, generador, combustible, aceite, refrigeración, alarma, fo-12, diésel]
+    examples:
+      - Qué significa la alarma FO-12 del generador
+      - Presión mínima de aire de arranque del diésel
+      - Temperatura de aceite del motor principal
+      - Arranque del generador en sala de máquinas
+      - Fallo de refrigeración de propulsión
   - id: cubierta
     label: Cubierta / Carga
     keywords: [cubierta, carga, amarre, ancla, grúa, container, bodega, lastre, cabo, snap-back]
+    examples:
+      - Checklist de amarre y zona de snap-back
+      - Operación de grúa de cubierta con mar de través
+      - Procedimiento de ancla y fondeo
+      - Estiba de carga en bodega
+      - Precauciones con cabos bajo tensión
   - id: seguridad
     label: Seguridad / ISM
     keywords: [seguridad, ism, lsa, chaleco, balsa, drill, incendio, extinción, fuego, co2]
+    examples:
+      - Plan de mantenimiento de LSA según ISM
+      - Frecuencia del drill de abandono
+      - Inspección de chalecos y balsas
+      - Uso del sistema de extinción CO2
+      - Checklist de seguridad antes de entrada a espacios cerrados
   - id: emergencias
     label: Emergencias
     keywords: [emergencia, sopep, abandono, hombre al agua, man overboard, distress, mayday, blackout, inundación, mob]
     default_response_mode: extractive
     criticality: critical
+    examples:
+      - Procedimiento de hombre al agua
+      - Acciones iniciales según SOPEP ante derrame
+      - Abandono del buque y puestos de reunión
+      - Incendio en sala de máquinas pasos inmediatos
+      - Mayday y señal de distress
   - id: electricidad
     label: Electricidad
     keywords: [eléctrico, electricidad, cuadro, blackout, ups, batería, cableado, 440v, 220v]
+    examples:
+      - Conmutar a generador de emergencia
+      - Fallo en el cuadro principal 440V
+      - Prueba de UPS y baterías
+      - Aislamiento de un circuito averiado
+      - Restaurar red tras pérdida de generador
   - id: comunicaciones
     label: Comunicaciones / GMDSS
     keywords: [gmdss, vhf, mf, hf, satélite, distress, epirb, sart, navtex, dsc]
+    examples:
+      - Llamada VHF DSC y paso a canal 16
+      - Prueba diaria obligatoria del GMDSS
+      - Activación de EPIRB y SART
+      - Mensaje NAVTEX y recepción
+      - Comunicaciones MF/HF de emergencia
+  - id: posicionamiento_dinamico
+    label: Posicionamiento dinámico (DP)
+    keywords:
+      - dp
+      - dp3
+      - dp-3
+      - thruster
+      - thrusters
+      - posicionamiento
+      - posicionamiento dinámico
+      - dynamic positioning
+      - watch circle
+      - fallback dp
+      - pérdida de referencia
+      - loss of position
+      - blackout dp
+      - prs
+      - dgps
+      - hydroacoustic
+      - joystick
+      - pipe-lay
+      - dlv
+    examples:
+      - Qué es el watch circle en DP y qué hacer si se supera
+      - Acciones ante pérdida de referencia DGPS en modo DP
+      - Fallback de DP class 3 a joystick o thruster manual
+      - Efecto de un blackout parcial en thrusters durante DP
+      - Checklist pre-entrada en DP antes de pipe-lay
+      - Cómo verificar PRS e hydroacoustic antes de operación
+      - Pérdida de posición y alarmas de DP
+      - Asignación de thrusters en DP3
   - id: general
     label: General
     keywords: [manual, documento]
+    examples:
+      - Índice general de manuales del buque
+      - Dónde está documentado un procedimiento genérico
+      - Consulta de documentación técnica sin zona clara
 
 api:
   host: 127.0.0.1

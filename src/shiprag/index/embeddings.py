@@ -107,6 +107,15 @@ class SentenceTransformerEmbedding(EmbeddingBackend):
         return np.asarray(emb, dtype=np.float32)
 
 
+def _resolve_model_candidate(cfg: AppConfig, name_or_path: str | None) -> str | None:
+    if not name_or_path:
+        return None
+    path = cfg.resolve(name_or_path)
+    if path.exists():
+        return str(path)
+    return name_or_path if Path(name_or_path).exists() else None
+
+
 def build_embedder(cfg: AppConfig | None = None) -> EmbeddingBackend:
     cfg = cfg or load_config()
     backend = (cfg.models.embedding.backend or "auto").lower().strip()
@@ -116,20 +125,25 @@ def build_embedder(cfg: AppConfig | None = None) -> EmbeddingBackend:
         logger.info("Perfil fuerza HashEmbedding (backend=%s)", backend)
         return HashEmbedding(dim=dim)
 
-    path = cfg.resolve(cfg.models.embedding.name_or_path) if cfg.models.embedding.name_or_path else None
-    candidate = str(path) if path and path.exists() else cfg.models.embedding.name_or_path
-    local_ok = bool(candidate) and Path(candidate).exists()
+    candidates: list[str] = []
+    primary = _resolve_model_candidate(cfg, cfg.models.embedding.name_or_path)
+    if primary:
+        candidates.append(primary)
+    fb = _resolve_model_candidate(cfg, cfg.models.embedding.fallback_name_or_path)
+    if fb and fb not in candidates:
+        candidates.append(fb)
 
-    if backend in {"auto", "sentence_transformers", "st"} and local_ok:
-        try:
-            logger.info("Cargando embeddings desde %s", candidate)
-            return SentenceTransformerEmbedding(
-                candidate,
-                device=cfg.models.embedding.device,
-                normalize=cfg.models.embedding.normalize,
-            )
-        except Exception as exc:
-            logger.warning("No se pudo cargar ST embeddings (%s). Fallback.", exc)
+    if backend in {"auto", "sentence_transformers", "st"}:
+        for candidate in candidates:
+            try:
+                logger.info("Cargando embeddings desde %s", candidate)
+                return SentenceTransformerEmbedding(
+                    candidate,
+                    device=cfg.models.embedding.device,
+                    normalize=cfg.models.embedding.normalize,
+                )
+            except Exception as exc:
+                logger.warning("No se pudo cargar ST embeddings %s (%s).", candidate, exc)
 
     if backend == "sentence_transformers":
         logger.warning(

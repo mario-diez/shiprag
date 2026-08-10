@@ -51,7 +51,13 @@ def run_doctor(cfg: AppConfig | None = None) -> dict[str, Any]:
 
     # Perfil / backends
     rt = cfg.runtime_summary()
-    checks.append(_ok("profile", f"{rt['profile']} · emb={rt['embedding_backend']} · rerank={rt['reranker_backend']}"))
+    checks.append(
+        _ok(
+            "profile",
+            f"{rt['profile']} · emb={rt['embedding_backend']} · "
+            f"rerank={rt['reranker_backend']} · ver={rt.get('verifier_backend', '?')}",
+        )
+    )
     if cfg.profile.id == "lite" and cfg.models.embedding.backend != "hash":
         checks.append(_warn("profile_consistency", "lite debería usar embedding.backend=hash"))
 

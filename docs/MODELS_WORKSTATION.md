@@ -2,6 +2,11 @@
 
 Hardware de referencia: **~12 GB VRAM + 64 GB RAM**.
 
+> **Tier distinto de `server`:** `workstation` es el banco de pruebas en casa
+> (e5-base + bge-reranker-base + Qwen2.5-7B). El perfil `server` es producción
+> a bordo (BGE-M3 + bge-reranker-v2-m3 + Qwen3-32B Q4_K_M), con fallback
+> automático al stack workstation si faltan pesos o falla la carga.
+
 ## ¿Hacen falta modelos “tochos”?
 
 No necesariamente. Con tu máquina el punto dulce es:
@@ -25,8 +30,11 @@ Con 8–12 GB VRAM **justos** usa **`balanced`** (retrieve bueno, sin LLM).
 Pregunta
    │
    ▼
-Router (zona: puente/máquina/emergencias…)
-   │
+¿Emergencia? ──sí──► emergencias + extractivo
+   │ no
+   ▼
+Router (embeddings/examples o keywords en lite)
+   │  zonas: puente / máquina / DP / …
    ▼
 Recuperación híbrida: BM25 + embeddings
    │
@@ -36,7 +44,8 @@ Reranker (reordena fragmentos)
    ├─ Si emergencia / modo citas ──► respuesta EXTRACTIVA (pega el manual)
    │
    └─ Si normal y llm.enabled ─────► Qwen GGUF reformula SOLO con evidencia
-                                      + verifier (si se desvía → abstención)
+                                      + verifier léxico (± NLI)
+                                      + abstención si no hay grounding
 ```
 
 Open WebUI, si lo usas, solo pinta el chat; por detrás sigue este pipeline.
@@ -74,13 +83,17 @@ Si VRAM se queda justa con embeddings+reranker+LLM a la vez:
 
 ## Comparativa rápida de perfiles
 
-| Perfil | Modelos | Para ti |
+| Perfil | Modelos | Propósito |
 |---|---|---|
 | `lite` | Ninguno | Solo demo rápida sin pesos |
-| `home` | e5-small + MiniLM (CPU) | Portátil / sin GPU |
-| **`balanced`** | e5-base + bge-reranker, sin LLM | **12 GB justos (recomendado)** |
-| `workstation` | e5-base + bge-reranker + Qwen 7B | GPU + LLM opcional |
-| `server` | Igual de base, pensado a bordo / más carga | Flota / servidor |
+| `home` | e5-small + MiniLM (CPU) + NLI opcional | Portátil / sin GPU |
+| **`balanced`** | e5-base + bge-reranker, sin LLM pesado | **12 GB justos (recomendado)** |
+| `workstation` | e5-base + bge-reranker-base + Qwen2.5-7B | **Prototipo / banco de pruebas (~12GB)** |
+| `server` | BGE-M3 + bge-reranker-v2-m3 + Qwen3-32B Q4 | **Producción a bordo** |
+
+`workstation` y `server` son **dos tiers distintos**, no una elección arbitraria:
+- **workstation**: iterar en casa con VRAM limitada (~12GB).
+- **server**: calidad operativa a bordo; si el hardware real no aguanta, el YAML define `fallback_name_or_path` hacia el stack workstation.
 
 ### Instalar LLM en Windows
 

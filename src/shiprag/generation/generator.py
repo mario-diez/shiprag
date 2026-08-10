@@ -276,16 +276,27 @@ class LocalLLMGenerator:
 def build_generator(cfg: AppConfig | None = None):
     cfg = cfg or load_config()
     if cfg.models.llm.enabled:
-        path = cfg.resolve(cfg.models.llm.name_or_path)
-        if path.exists():
+        candidates: list[str] = []
+        primary = cfg.resolve(cfg.models.llm.name_or_path)
+        if primary.exists():
+            candidates.append(str(primary))
+        fb_raw = (cfg.models.llm.fallback_name_or_path or "").strip()
+        if fb_raw:
+            fb = cfg.resolve(fb_raw)
+            if fb.exists() and str(fb) not in candidates:
+                candidates.append(str(fb))
+        for path in candidates:
             try:
+                logger.info("Cargando LLM GGUF desde %s", path)
                 return LocalLLMGenerator(
-                    str(path),
+                    path,
                     n_ctx=cfg.models.llm.n_ctx,
                     n_gpu_layers=cfg.models.llm.n_gpu_layers,
                     temperature=cfg.models.llm.temperature,
                     max_tokens=cfg.models.llm.max_tokens,
                 )
             except Exception as exc:
-                logger.warning("LLM local no cargó (%s). Usando extractivo.", exc)
+                logger.warning("LLM local no cargó %s (%s).", path, exc)
+        if candidates:
+            logger.warning("Ningún GGUF cargó. Usando extractivo.")
     return ExtractiveGenerator()

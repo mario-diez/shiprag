@@ -28,6 +28,8 @@ class EmbeddingConfig(BaseModel):
     backend: str = "auto"
     name_or_path: str = "models/embeddings/multilingual-e5-small"
     fallback: str = "hash"
+    # Si el primario no existe o falla al cargar, intentar este path
+    fallback_name_or_path: str = ""
     device: str = "cpu"
     normalize: bool = True
     dim: int = 384
@@ -38,22 +40,35 @@ class RerankerConfig(BaseModel):
     backend: str = "auto"
     name_or_path: str = "models/reranker/bge-reranker-base"
     fallback: str = "lexical"
+    fallback_name_or_path: str = ""
     device: str = "cpu"
 
 
 class LLMConfig(BaseModel):
     enabled: bool = False
     name_or_path: str = "models/llm/model.gguf"
+    fallback_name_or_path: str = ""
     n_ctx: int = 4096
     n_gpu_layers: int = 0
     temperature: float = 0.1
     max_tokens: int = 512
 
 
+class VerifierConfig(BaseModel):
+    # backend: lexical | auto | nli
+    backend: str = "lexical"
+    name_or_path: str = "models/verifier/mDeBERTa-v3-base-mnli-xnli"
+    fallback: str = "lexical"
+    device: str = "cpu"
+    entailment_threshold: float = 0.5
+    emergency_entailment_threshold: float = 0.6
+
+
 class ModelsConfig(BaseModel):
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     reranker: RerankerConfig = Field(default_factory=RerankerConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    verifier: VerifierConfig = Field(default_factory=VerifierConfig)
 
 
 class RetrievalConfig(BaseModel):
@@ -92,11 +107,14 @@ class ZoneConfig(BaseModel):
     id: str
     label: str
     keywords: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
     default_response_mode: str | None = None
     criticality: str | None = None
 
 
 class RouterConfig(BaseModel):
+    # backend: auto | keywords | embedding
+    backend: str = "auto"
     confidence_threshold: float = 0.45
     allow_multi_expert: bool = True
     max_experts: int = 3
@@ -167,10 +185,12 @@ class AppConfig(BaseModel):
             "profile_label": self.profile.label,
             "embedding_backend": self.models.embedding.backend,
             "reranker_backend": self.models.reranker.backend,
+            "verifier_backend": self.models.verifier.backend,
             "llm_enabled": self.models.llm.enabled,
             "index_dir": str(self.index_path),
             "device_embedding": self.models.embedding.device,
             "device_reranker": self.models.reranker.device,
+            "device_verifier": self.models.verifier.device,
         }
 
 

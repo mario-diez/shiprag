@@ -111,6 +111,15 @@ class CrossEncoderReranker(Reranker):
         return out[:top_k]
 
 
+def _resolve_reranker_candidate(cfg: AppConfig, name_or_path: str | None) -> str | None:
+    if not name_or_path:
+        return None
+    path = cfg.resolve(name_or_path)
+    if path.exists():
+        return str(path)
+    return name_or_path if Path(name_or_path).exists() else None
+
+
 def build_reranker(cfg: AppConfig | None = None, emergency_bias: bool = False) -> Reranker:
     cfg = cfg or load_config()
     backend = (cfg.models.reranker.backend or "auto").lower().strip()
@@ -119,14 +128,21 @@ def build_reranker(cfg: AppConfig | None = None, emergency_bias: bool = False) -
         logger.info("Perfil fuerza LexicalReranker (backend=lexical)")
         return LexicalReranker(emergency_bias=emergency_bias)
 
-    path = cfg.resolve(cfg.models.reranker.name_or_path) if cfg.models.reranker.name_or_path else None
-    candidate = str(path) if path and path.exists() else cfg.models.reranker.name_or_path
-    if backend in {"auto", "cross_encoder", "ce"} and candidate and Path(candidate).exists():
-        try:
-            logger.info("Cargando reranker %s", candidate)
-            return CrossEncoderReranker(candidate, device=cfg.models.reranker.device)
-        except Exception as exc:
-            logger.warning("Reranker CE falló (%s). Fallback lexical.", exc)
+    candidates: list[str] = []
+    primary = _resolve_reranker_candidate(cfg, cfg.models.reranker.name_or_path)
+    if primary:
+        candidates.append(primary)
+    fb = _resolve_reranker_candidate(cfg, cfg.models.reranker.fallback_name_or_path)
+    if fb and fb not in candidates:
+        candidates.append(fb)
+
+    if backend in {"auto", "cross_encoder", "ce"}:
+        for candidate in candidates:
+            try:
+                logger.info("Cargando reranker %s", candidate)
+                return CrossEncoderReranker(candidate, device=cfg.models.reranker.device)
+            except Exception as exc:
+                logger.warning("Reranker CE falló en %s (%s).", candidate, exc)
 
     logger.info(
         "Usando LexicalReranker (profile=%s backend=%s)",

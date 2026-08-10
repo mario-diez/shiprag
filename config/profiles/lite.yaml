@@ -28,6 +28,8 @@ models:
     device: cpu
   llm:
     enabled: false
+  verifier:
+    backend: lexical       # sin NLI; solo grounding léxico
 
 retrieval:
   lexical_top_k: 30
@@ -40,3 +42,6 @@ ocr:
 generation:
   default_mode: extractive
   emergency_mode: extractive
+
+router:
+  backend: keywords        # sin embeddings reales → keywords

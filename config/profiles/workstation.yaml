@@ -1,5 +1,8 @@
 # Perfil WORKSTATION — PC potente en casa (≈12GB VRAM / 64GB RAM)
-# Modelos locales de calidad media-alta sin irse a un rack de servidor.
+# Banco de pruebas / prototipo. NO es el stack de producción a bordo
+# (ese es `server`: BGE-M3 + bge-reranker-v2-m3 + Qwen3-32B).
+#
+# Stack: multilingual-e5-base + bge-reranker-base + Qwen2.5-7B.
 #
 # Si 12 GB se te quedan justos: usa el perfil `balanced` (sin LLM)
 # o deja embedding/reranker en cpu y solo el GGUF en GPU.
@@ -12,8 +15,9 @@ profile:
   id: workstation
   label: Workstation (GPU casa)
   description: >
-    Para PC de casa con GPU (p.ej. 12GB VRAM). Embeddings + reranker neuronales
-    y LLM Qwen GGUF opcional. En emergencias sigue mandando el modo extractivo.
+    Tier de prototipo/banco de pruebas (~12GB VRAM). Embeddings + reranker
+    neuronales y LLM Qwen2.5-7B GGUF. Distinto del perfil server a bordo.
+    En emergencias sigue mandando el modo extractivo.
 
 paths:
   index_dir: data/indexes/workstation
@@ -42,6 +46,13 @@ models:
     n_gpu_layers: 35   # offload a VRAM; baja si OOM
     temperature: 0.1
     max_tokens: 512
+  verifier:
+    backend: auto
+    name_or_path: models/verifier/mDeBERTa-v3-base-mnli-xnli
+    fallback: lexical
+    device: cpu
+    entailment_threshold: 0.5
+    emergency_entailment_threshold: 0.6
 
 retrieval:
   lexical_top_k: 50

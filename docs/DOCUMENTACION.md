@@ -2,8 +2,7 @@
 
 **Versión del MVP:** 0.1.0  
 **Rama:** `cursor/shiprag-offline-mvp-a2a3`  
-**Agente Cloud:** https://cursor.com/agents/bc-019fd85c-33c7-7fd0-b67c-ef423c4ba2a3  
-**Fecha de esta documentación:** 2026-08-06  
+**Fecha de esta documentación:** 2026-08-10  
 
 Este documento describe **cómo se ha montado** el sistema, **qué hay implementado**, **cómo usarlo**, **qué falta** y **cuáles son los próximos pasos** recomendados. Está pensado tanto para retomar el trabajo en un PC de casa como para una eventual puesta en marcha a bordo.
 
@@ -12,11 +11,15 @@ Documentos complementarios (más cortos):
 | Documento | Contenido |
 |---|---|
 | [README.md](../README.md) | Visión general + quickstart |
+| [NOVEDADES.md](NOVEDADES.md) | **Router embeddings, NLI, zona DP, tiers WS/server** |
 | [QUICKSTART_CASA.md](../QUICKSTART_CASA.md) | Arranque en 5 minutos en PC |
 | [DESCARGA_PC.md](../DESCARGA_PC.md) | Pasar del Cloud Agent al PC |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Decisiones técnicas resumidas |
-| [config/default.yaml](../config/default.yaml) | Configuración base |
-| [config/profiles/](../config/profiles/) | Perfiles `lite` / `home` / `server` |
+| [MODELS_WORKSTATION.md](MODELS_WORKSTATION.md) | Stack prototipo vs producción |
+| [PERFILES.md](../PERFILES.md) | Cómo lanzar cada perfil |
+| [OPENWEBUI.md](OPENWEBUI.md) | Integración Open WebUI |
+| [config/default.yaml](../config/default.yaml) | Configuración base (zonas, examples, verifier) |
+| [config/profiles/](../config/profiles/) | Perfiles `lite` / `home` / `balanced` / `workstation` / `server` |
 
 ---
 
@@ -55,9 +58,9 @@ En un contexto naval, un paso inventado en un SOPEP o en un MOB puede ser peligr
 Un único índice global mezcla puentes con máquinas y contamina resultados.  
 Se implementaron **mini-expertos por zona** (colección BM25 + densa propia + reglas):
 
-- `puente`, `maquinaria`, `cubierta`, `seguridad`, `emergencias`, `electricidad`, `comunicaciones`, `general`
+- `puente`, `maquinaria`, `cubierta`, `seguridad`, `emergencias`, `electricidad`, `comunicaciones`, `posicionamiento_dinamico`, `general`
 
-Un **router** clasifica la consulta y elige uno o varios expertos. Si la confianza es baja, cae a `general` o combina dominio + fallback.
+Un **router** clasifica la consulta (similitud de embeddings vs frases `examples` por zona; en `lite`, keywords). Si detecta emergencia, **fuerza** `emergencias` + extractivo. Si la confianza es baja, cae a `general` o combina dominio + fallback.
 
 ### 2.3 Recuperación híbrida
 
@@ -75,9 +78,13 @@ Por eso: **BM25 ⊕ denso → fusión RRF → rerank**.
 
 | Perfil | Uso | Modelos |
 |---|---|---|
-| `lite` (default) | PC casa / demo | Ninguno (hash + lexical + extractivo) |
-| `home` | Casa con CPU | e5-small + MiniLM si existen |
-| `server` | Workstation / a bordo | e5-base + bge-reranker + LLM GGUF opcional |
+| `lite` (default) | PC casa / demo | Ninguno (hash + lexical + extractivo + keywords) |
+| `home` | Casa con CPU | e5-small + MiniLM + NLI si existen |
+| `balanced` | GPU 8–12 GB justa | e5-base + bge-reranker (+ NLI), LLM ligero opcional |
+| `workstation` | Prototipo / banco de pruebas | e5-base + bge-reranker-base + Qwen2.5-7B |
+| `server` | Producción a bordo | BGE-M3 + bge-reranker-v2-m3 + Qwen3-32B (fallback a WS) |
+
+`workstation` y `server` son **tiers distintos** (prototipo vs producción), no una elección arbitraria. Ver [NOVEDADES.md](NOVEDADES.md).
 
 Cada perfil tiene su propio directorio de índices (`data/indexes/<perfil>/`) para no mezclar embeddings distintos.
 
@@ -92,14 +99,14 @@ Usuario (UI / CLI / API)
 ┌───────────────────────────┐
 │   Orquestador central     │
 │  · criticidad / modo      │
-│  · router de zona         │
-│  · emergencia → extractivo│
+│  · router (emb / keywords)│
+│  · emergencia → override  │
 └─────────────┬─────────────┘
               │
      ┌────────┼────────┐
      ▼        ▼        ▼
   Experto  Experto  Experto …
-  (zona)   (zona)   (zona)
+  (zona)   (zona)   (DP / …)
      │        │        │
      └────────┼────────┘
               ▼
@@ -111,13 +118,13 @@ Usuario (UI / CLI / API)
    Generación controlada
    (extractiva / semi / LLM*)
               ▼
-   Verificador de grounding
-   + umbrales + abstención
+   Verificador grounding
+   (léxico ± NLI) + abstención
               ▼
    Respuesta + citas + trace
 ```
 
-`*` El LLM local está **desactivado por defecto** y no es necesario para el MVP.
+`*` El LLM local es opcional. En emergencias manda el modo extractivo.
 
 ### 3.1 Flujo de ingesta
 
@@ -156,6 +163,8 @@ shiprag/
 │   └── profiles/
 │       ├── lite.yaml
 │       ├── home.yaml
+│       ├── balanced.yaml
+│       ├── workstation.yaml
 │       └── server.yaml
 ├── src/shiprag/
 │   ├── cli.py                # CLI: ingest/query/serve/eval/smoke/doctor…
@@ -171,7 +180,9 @@ shiprag/
 │   ├── api/                  # FastAPI
 │   └── ui/static/            # UI local
 ├── data/sample/              # Corpus sintético de demo
-├── eval/golden_set.jsonl     # Banco de evaluación
+├── eval/
+│   ├── golden_set.jsonl           # Banco sintético CI
+│   └── golden_set_crew_draft.jsonl  # Plantilla preguntas tripulación
 ├── tests/                    # Tests unitarios
 ├── scripts/                  # Arranque, pack, PDFs, descarga modelos
 ├── Dockerfile
@@ -220,7 +231,7 @@ Colocar como `mi_documento.meta.yaml` junto al fichero.
 
 | Fichero | Responsabilidad |
 |---|---|
-| `embeddings.py` | `HashEmbedding` (lite) o `SentenceTransformer` (home/server) |
+| `embeddings.py` | `HashEmbedding` (lite) o `SentenceTransformer` (home/WS/server); `fallback_name_or_path` |
 | `lexical.py` | BM25 persistente por zona (`lexical.jsonl`) |
 | `store.py` | `DenseStore` (Chroma o fallback) + `HybridIndex` multi-zona |
 
@@ -237,17 +248,20 @@ Los chunks de cada zona se espejan también en `general` para consultas globales
 
 | Fichero | Responsabilidad |
 |---|---|
-| `router.py` | Clasificación por keywords + patrones de emergencia |
+| `router.py` | Embeddings (examples) o keywords; override duro de emergencia → `emergencias` |
 | `expert.py` | Perfil por zona (modo por defecto, bias de criticidad) |
 
-Patrones de emergencia detectados (entre otros): hombre al agua, SOPEP, mayday, blackout, incendio en…, abandono, inundación.
+Patrones de emergencia detectados (entre otros): hombre al agua, SOPEP, mayday, distress, blackout, incendio en…, abandono, inundación.  
+Zona DP: consultas no urgentes de thrusters / watch circle / PRS → `posicionamiento_dinamico`.
 
 ### 5.6 Generación y verificación — `src/shiprag/generation/`
 
 | Fichero | Responsabilidad |
 |---|---|
-| `generator.py` | Extractivo / semi / citations_only; LLM GGUF opcional |
-| `verifier.py` | Score de evidencia, relevancia query↔doc, grounding, abstención |
+| `generator.py` | Extractivo / semi / citations_only; LLM GGUF opcional (+ `fallback_name_or_path`) |
+| `verifier.py` | Léxico (evidencia, qrel, grounding) + NLI opcional (`build_verifier`) |
+
+**Verifier NLI** (`models.verifier`): si `backend=auto|nli` y hay pesos mDeBERTa, la respuesta solo se acepta si pasa el umbral léxico **y** entailment evidencia→afirmación. En `lite` o si falla la carga → solo léxico.
 
 **Modos de respuesta:**
 
@@ -413,34 +427,37 @@ python scripts/pack_for_home.py
 - [x] Metadatos + sidecars YAML  
 - [x] Índice híbrido BM25 + vectorial por zona  
 - [x] Reranking local (CE o lexical)  
-- [x] Router multi-experto por zona  
+- [x] Router multi-experto por zona (embeddings + keywords; override emergencia)  
+- [x] Zona `posicionamiento_dinamico` (DP)  
 - [x] Consulta global / multi-experto  
 - [x] Modos extractivo / semi / solo citas / auto  
 - [x] Modo emergencia conservador  
 - [x] Citas con documento/versión/página/sección  
-- [x] Verificación anti-alucinación + abstención  
+- [x] Verificación anti-alucinación (léxico ± NLI) + abstención  
 - [x] Detección heurística de conflictos entre procedimientos  
 - [x] Trace de recuperación auditable  
 - [x] API local + UI  
 - [x] CLI completa  
-- [x] Perfiles lite/home/server  
+- [x] Perfiles lite / home / balanced / workstation / server (tiers WS≠server)  
+- [x] Fallback de modelos (`fallback_name_or_path`) en server  
 - [x] Doctor + smoke + eval  
 - [x] Docker lite  
 - [x] Kit zip para PC casa  
-- [x] Tests unitarios + golden set  
+- [x] Tests unitarios + golden set + draft tripulación  
 
 ### No montado / parcial (ver sección 11)
 
-- [ ] Corpus real del buque  
+- [ ] Corpus real del buque (incl. manuales DP)  
 - [ ] Modelos neuronales empaquetados en el repo  
 - [ ] LLM local por defecto  
 - [ ] VLM para planos/P&ID  
 - [ ] Repo GitHub remoto enlazado a este agente  
 - [ ] Auth / multi-usuario / RBAC  
 - [ ] Firma/integridad criptográfica de manuales  
-- [ ] Fine-tune del router por flota  
+- [ ] Ajuste fino de `examples` del router con logs reales  
 - [ ] HITL de validación de citas  
 - [ ] Integración bitácora ISM / export oficial  
+- [ ] Fusionar draft de tripulación en golden oficial  
 
 ---
 
@@ -451,8 +468,11 @@ python scripts/pack_for_home.py
 | Extractivo-first en emergencias | Solo LLM generativo | Riesgo de pasos inventados |
 | Híbrido BM25+denso+RRF | Solo vectores | Códigos técnicos (`FO-12`) |
 | Chroma embebido + BM25 fichero | Elastic/Qdrant server | Menos daemons a bordo |
-| Perfiles lite/home/server | Un único stack “server” | Poder probar en PC casa |
-| LLM opcional y off | LLM obligatorio | Offline + coste + control |
+| Tiers workstation ≠ server | Un único stack “server” | Prototipo en casa vs producción a bordo |
+| Verifier léxico + NLI opcional | Confiar en el LLM | Doble anclaje sin romper lite |
+| Router embeddings + override emergencia | Solo keywords / solo clasificador | Offline, reusa embedder, seguridad en crisis |
+| Zona DP propia | Diluir DP en puente/máquina | DP3 es dominio crítico |
+| LLM opcional y off en lite | LLM obligatorio | Offline + coste + control |
 | Abstención explícita | “Mejor respuesta posible” | Seguridad operativa |
 | Índices por zona | Un solo índice | Menos contaminación cruzada |
 | Traces en disco | Telemetría cloud | Auditoría air-gapped |
@@ -471,11 +491,12 @@ python scripts/pack_for_home.py
 
 ### 11.2 Calidad de recuperación / generación
 
-1. Router con clasificador entrenado (ahora es lexical + reglas).  
-2. Cross-encoder real en operación (no solo fallback lexical).  
+1. Afinar `examples` del router con logs reales de tripulación (ya no es solo keywords).  
+2. Corpus e índice para `posicionamiento_dinamico` (manuales DP del buque).  
 3. Mejor manejo de tablas multi-página y anexos.  
 4. Mejor OCR de planos densos; idealmente capas CAD/texto.  
-5. Conflictos entre versiones: hoy es heurístico; falta política “versión vigente gana”.
+5. Conflictos entre versiones: hoy es heurístico; falta política “versión vigente gana”.  
+6. Fusionar `golden_set_crew_draft.jsonl` tras revisión humana.
 
 ### 11.3 Seguridad y operación
 
@@ -542,10 +563,10 @@ python scripts/pack_for_home.py
 ### Fase E — Madurez
 
 1. HITL de citas.  
-2. Fine-tune router.  
+2. Ajuste continuo de `examples` del router + corpus DP.  
 3. Integridad de paquetes.  
 4. Export ISM.  
-5. Evaluación continua (regresión en cada actualización de corpus).
+5. Evaluación continua (regresión en cada actualización de corpus; fusionar draft tripulación).
 
 ---
 

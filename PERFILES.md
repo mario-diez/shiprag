@@ -5,10 +5,12 @@ Hay **5 perfiles** de hardware. Elige uno según tu máquina. Cada perfil guarda
 | Perfil | Hardware | Modelos | GPU / VRAM |
 |---|---|---|---|
 | `lite` | Cualquier PC | Ninguno | No |
-| `home` | Portátil / CPU | e5-small + MiniLM | No |
+| `home` | Portátil / CPU | e5-small + MiniLM + NLI opcional | No |
 | **`balanced`** | **PC con GPU 8–12 GB (recomendado si VRAM justa)** | e5-base + bge-reranker, **sin LLM** | ~1–2 GB |
-| `workstation` | PC casa potente | e5-base + bge-reranker + Qwen 7B opcional | ~8–12 GB si LLM |
-| `server` | Servidor a bordo | e5-base + bge-reranker + GGUF opcional | Opcional |
+| `workstation` | PC casa potente (prototipo) | e5-base + bge-reranker-base + Qwen2.5-7B | ~8–12 GB si LLM |
+| `server` | Servidor a bordo (producción) | BGE-M3 + bge-reranker-v2-m3 + Qwen3-32B Q4 | Alta (fallback a stack WS) |
+
+`workstation` y `server` son **tiers distintos**: banco de pruebas vs producción a bordo.
 
 Comandos comunes (tras instalar):
 
@@ -197,29 +199,38 @@ shiprag --profile workstation serve --port 8080
 
 ---
 
-## 5. `server` — a bordo / alto cómputo
+## 5. `server` — producción a bordo
 
-Misma familia de modelos que workstation, pensado para operación continua. Por defecto embeddings/reranker en **CPU**; activa CUDA si hay GPU en el servidor.
+Tier distinto de `workstation`: BGE-M3 + `bge-reranker-v2-m3` + Qwen3-32B Q4_K_M (CUDA).  
+Si faltan pesos o falla la carga, `fallback_name_or_path` cae al stack workstation (e5-base + bge-base + Qwen2.5-7B).
 
 ### Descargar modelos (en puerto, antes de zarpar)
 
 ```bash
 python scripts/download_models.py --profile server
+# LLM GGUF: copiar qwen3-32b-instruct-q4_k_m.gguf a models/llm/
+# (opcional fallback: qwen2.5-7b-instruct-q4_k_m.gguf)
 ```
 
-### GPU (opcional)
+### GPU
 
-En `config/profiles/server.yaml`:
+En `config/profiles/server.yaml` (valores por defecto ya apuntan a CUDA):
 
 ```yaml
 models:
   embedding:
+    name_or_path: models/embeddings/bge-m3
+    fallback_name_or_path: models/embeddings/multilingual-e5-base
     device: cuda
   reranker:
+    name_or_path: models/reranker/bge-reranker-v2-m3
+    fallback_name_or_path: models/reranker/bge-reranker-base
     device: cuda
   llm:
-    enabled: true          # solo si tienes GGUF en models/llm/model.gguf
-    n_gpu_layers: 35       # >0 si llama-cpp con CUDA/Metal
+    enabled: true
+    name_or_path: models/llm/qwen3-32b-instruct-q4_k_m.gguf
+    fallback_name_or_path: models/llm/qwen2.5-7b-instruct-q4_k_m.gguf
+    n_gpu_layers: 60
 ```
 
 ### Arranque
@@ -233,7 +244,6 @@ shiprag --profile server serve --host 127.0.0.1 --port 8080
 En navegación **no** hace falta internet si los pesos ya están en `models/`.
 
 ---
-
 ## Instalar LLM en Windows (`llama-cpp-python`)
 
 `pip install -e ".[llm]"` en Windows suele **fallar**: descarga el `.tar.gz` fuente y Windows corta rutas largas en `%TEMP%` (`OSError: No such file or directory` con paths de `vendor/llama.cpp/...`).
@@ -295,6 +305,9 @@ shiprag --profile server serve --port 8080
 ## Notas útiles
 
 - **Re-ingesta al cambiar de perfil**: los índices no son intercambiables (`data/indexes/lite` ≠ `home` ≠ `balanced` ≠ …).
-- **Emergencias**: en todos los perfiles el modo emergencia es extractivo (citas del manual), aunque haya LLM.
+- **Emergencias**: override duro a zona `emergencias` + modo extractivo (citas del manual), aunque haya LLM.
+- **NLI**: perfiles `home+` pueden cargar verifier mDeBERTa; `lite` queda solo léxico.
 - **Docker (lite)**: `docker compose up --build` — ver también [docs/OPENWEBUI.md](docs/OPENWEBUI.md).
+- **Novedades**: [docs/NOVEDADES.md](docs/NOVEDADES.md).
 - **Guía corta casa**: [QUICKSTART_CASA.md](QUICKSTART_CASA.md).
+- **Arquitectura**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DOCUMENTACION.md](docs/DOCUMENTACION.md).

@@ -4,6 +4,7 @@ Sistema RAG **100% offline** orientado a consultas de alta precisión sobre manu
 procedimientos de emergencia, planos, listas de chequeo y documentación técnica naval.
 
 **Documentación completa:** [docs/DOCUMENTACION.md](docs/DOCUMENTACION.md)  
+**Novedades (router embeddings, NLI, zona DP, tiers):** [docs/NOVEDADES.md](docs/NOVEDADES.md)  
 (cómo está montado, inventario, uso, qué falta y próximos pasos)
 
 **Prioridad de diseño:** reducir alucinaciones y abstenerse cuando no haya evidencia,
@@ -19,7 +20,7 @@ no maximizar “fluidez” de respuesta.
 | **Híbrido BM25 + denso + RRF** | Solo vectores | Consultas con códigos (`FO-12`, `P-255`, `SOLAS III/20`) fallan en embedding puro. |
 | **Reranker cross-encoder local** | Top-k vectorial directo | Mejora precisión@k en dominios técnicos con vocabulario denso. |
 | **Mini-expertos por zona** (índices separados) | Un solo índice global | Reduce contaminación entre dominios (puente ≠ máquina) y permite reglas distintas. |
-| **Verificación post-generación** | Confiar en el LLM | Grounding lexical + umbral de confianza + abstención. |
+| **Verificación post-generación** | Confiar en el LLM | Grounding léxico + NLI opcional + umbral + abstención. |
 | **Chroma local + BM25 en disco** | Qdrant/Elastic/Weaviate server | Menos moving parts a bordo; sin daemons externos. |
 | **Modelos locales plugables** | APIs cloud | Sin internet en operación. |
 
@@ -36,15 +37,16 @@ no maximizar “fluidez” de respuesta.
                     ┌──────────────────▼──────────────────────┐
                     │         Orquestador central             │
                     │  · clasifica criticidad / intención     │
-                    │  · router de zona (expertos)            │
+                    │  · router zona (embeddings / keywords)  │
+                    │  · emergencia → fuerza emergencias      │
                     │  · modo: normal | emergencia | citas    │
                     └──────────────────┬──────────────────────┘
                                        │
           ┌────────────────────────────┼────────────────────────────┐
           ▼                            ▼                            ▼
    ┌──────────────┐           ┌──────────────┐            ┌──────────────┐
-   │ Experto      │           │ Experto      │    ...     │ Experto      │
-   │ PUENTE       │           │ MAQUINARIA   │            │ EMERGENCIAS  │
+   │ Experto      │           │ Experto      │    ...     │ Experto DP   │
+   │ PUENTE       │           │ MAQUINARIA   │            │ / EMERGENCIAS│
    │ idx+reglas   │           │ idx+reglas   │            │ idx+reglas   │
    └──────┬───────┘           └──────┬───────┘            └──────┬───────┘
           │                          │                           │
@@ -61,7 +63,8 @@ no maximizar “fluidez” de respuesta.
                      · LLM local opcional
                                      ▼
                           Verificador de grounding
-                     · overlap léxico / citas
+                     · overlap léxico
+                     · NLI entailment (opcional)
                      · umbral → ABSTENERSE
                                      ▼
                           Respuesta + citas + trace
@@ -78,12 +81,12 @@ no maximizar “fluidez” de respuesta.
 
 ### Flujo de consulta
 
-1. Router → zona(s) + criticidad + modo de respuesta.
+1. Router → zona(s) + criticidad + modo (override duro si emergencia).
 2. Filtros metadata (zona, tipo, idioma, criticidad).
 3. Retrieve híbrido (top N lexical + top N vectorial) → RRF.
 4. Rerank local → top K.
 5. Generación según modo (extractivo si emergencia / confianza baja).
-6. Verificación: si grounding < umbral → `"NO_ENCONTRADO"` / clarificación.
+6. Verificación léxica (+ NLI si hay modelo): grounding bajo → abstención.
 7. Trace de recuperación para auditoría.
 
 ---
@@ -99,6 +102,7 @@ no maximizar “fluidez” de respuesta.
 | `emergencias` | SOPEP, abandono, hombre al agua, incendio |
 | `electricidad` | Cuadros, blackout, UPS |
 | `comunicaciones` | GMDSS, VHF, distress |
+| `posicionamiento_dinamico` | DP, thrusters, watch circle, PRS/DGPS |
 | `general` | Fallback / multi-dominio |
 
 Cada zona tiene colección propia + reglas (p.ej. emergencias → modo extractivo por defecto).
@@ -112,8 +116,9 @@ Cada zona tiene colección propia + reglas (p.ej. emergencias → modo extractiv
 | API | FastAPI | Local `127.0.0.1` |
 | Vectores | ChromaDB (persistente) | Sin servidor externo |
 | Lexical | BM25 (`rank_bm25`) serializado | Códigos y términos exactos |
-| Embeddings | `sentence-transformers` (E5/BGE multilingual) | Descarga **en puerto**; runtime offline |
+| Embeddings | `sentence-transformers` (E5 / BGE-M3) | Descarga **en puerto**; runtime offline |
 | Reranker | Cross-encoder local | Fallback lexical si no hay modelo |
+| Verifier | Léxico + NLI opcional (mDeBERTa) | Lite = solo léxico |
 | LLM | Opcional `llama-cpp-python` + GGUF | No obligatorio: modo extractivo funciona solo |
 | PDF | PyMuPDF + pdfplumber | Texto + tablas |
 | OCR | Tesseract (opcional) | Planos/escaneados |
@@ -140,6 +145,7 @@ Cada zona tiene colección propia + reglas (p.ej. emergencias → modo extractiv
 ## 6. Uso rápido (PC de casa primero)
 
 > **Cómo lanzar cada perfil:** **[PERFILES.md](PERFILES.md)**  
+> **Novedades recientes:** **[docs/NOVEDADES.md](docs/NOVEDADES.md)**  
 > Guía corta: **[QUICKSTART_CASA.md](QUICKSTART_CASA.md)** · Descarga al PC: **[DESCARGA_PC.md](DESCARGA_PC.md)** · Open WebUI: **[docs/OPENWEBUI.md](docs/OPENWEBUI.md)**  
 > Arranque: `bash scripts/start_lite.sh` · Windows: `scripts\start_lite.bat` · Docker: `docker compose up --build` · Con Open WebUI: `docker compose --profile openwebui up --build`
 
@@ -147,11 +153,11 @@ ShipRAG tiene **perfiles de hardware** para no obligarte a montar modelos de ser
 
 | Perfil | Para qué | Modelos |
 |---|---|---|
-| `lite` (**default**) | Probar flujo sin pesos | Ninguno (BM25 + hash + extractivo) |
-| `home` | Casa con CPU | e5-small + MiniLM (opcionales) |
-| `balanced` | **GPU 8–12 GB sin apretar** | e5-base + bge-reranker, sin LLM |
-| `workstation` | PC con GPU + LLM opcional | e5-base + bge-reranker + Qwen 7B opcional |
-| `server` | A bordo / más carga | e5-base + bge-reranker + GGUF opcional |
+| `lite` (**default**) | Probar flujo sin pesos | Ninguno (BM25 + hash + extractivo + keywords) |
+| `home` | Casa con CPU | e5-small + MiniLM + NLI opcional |
+| `balanced` | **GPU 8–12 GB sin apretar** | e5-base + bge-reranker (+ NLI), sin LLM pesado |
+| `workstation` | Prototipo / banco de pruebas (~12 GB) | e5-base + bge-reranker-base + Qwen2.5-7B |
+| `server` | **Producción a bordo** | BGE-M3 + bge-reranker-v2-m3 + Qwen3-32B (fallback a stack WS) |
 
 ```bash
 # Instalación
@@ -162,6 +168,7 @@ pip install -e ".[dev]"
 # --- PC de casa (recomendado para empezar) ---
 shiprag --profile lite ingest data/sample
 shiprag --profile lite query "procedimiento hombre al agua" --emergency
+shiprag --profile lite query "watch circle en DP"
 shiprag --profile lite serve --port 8080
 # Abrir http://127.0.0.1:8080
 
@@ -174,14 +181,20 @@ python scripts/download_models.py --profile home
 shiprag --profile home ingest data/sample
 shiprag --profile home serve
 
-# --- Servidor / alto cómputo ---
+# --- Prototipo GPU casa ---
+python scripts/download_models.py --profile workstation
+shiprag --profile workstation serve
+
+# --- Producción a bordo ---
 python scripts/download_models.py --profile server
 shiprag --profile server serve
-# (LLM GGUF: editar config/profiles/server.yaml → models.llm.enabled: true)
+# LLM: models/llm/qwen3-32b-instruct-q4_k_m.gguf (fallback Qwen2.5-7B)
 
 # Tests + evaluación
 pytest -q
 shiprag --profile lite eval eval/golden_set.jsonl
+# Borrador preguntas tripulación (revisar antes de fusionar):
+# shiprag --profile lite eval eval/golden_set_crew_draft.jsonl
 ```
 
 También puedes fijar el perfil por entorno: `export SHIPRAG_PROFILE=lite`.
@@ -219,8 +232,8 @@ eval/             # banco de evaluación + métricas
 2. **Tablas multi-página** se fragmentan; la calidad depende del PDF de origen.
 3. **El LLM local** no viene empaquetado (pesos grandes); el sistema es usable en modo
    extractivo/semi-extractivo sin él — y eso es **preferible** en emergencias.
-4. **El router** es lexical + reglas + clasificador ligero; un modelo de clasificación
-   fine-tuned por flota mejora precisiones en fase 2.
+4. **El router por embeddings** mejora el lexical, pero los `examples` por zona deben
+   afinarse con consultas reales de la tripulación; sin corpus DP el experto DP recupera poco.
 5. **Diagramas/figuras** se indexan por caption + OCR de página; no hay VLM offline
    por defecto (añadible después con un modelo vision local cuantizado).
 
@@ -228,13 +241,13 @@ eval/             # banco de evaluación + métricas
 
 ## 9. Roadmap post-MVP
 
-- Fine-tune del router por corpus de la flota.
+- Afinar `examples`/keywords del router con logs de consultas reales.
 - Versionado documental con invalidación de índice.
 - Firma/integridad de manuales (hash + allowlist).
 - UI de revisión humana (HITL) para validar citas críticas.
 - Export de traces a bitácora ISM.
-- Soporte de paquetes de modelos “air-gap” (tar.gz con embeddings+reranker+LLM).
-
+- Soporte de paquetes de modelos “air-gap” (tar.gz con embeddings+reranker+NLI+LLM).
+- Fusionar `golden_set_crew_draft.jsonl` → golden oficial tras revisión de tripulación.
 ---
 
 ## Licencia

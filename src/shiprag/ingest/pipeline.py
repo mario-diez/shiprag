@@ -32,6 +32,21 @@ ZONE_HINTS = {
         " derrame",
         "mob",
     ],
+    Zone.POSICIONAMIENTO_DINAMICO: [
+        "posicionamiento dinámico",
+        "posicionamiento dinamico",
+        "dynamic positioning",
+        " thruster",
+        "watch circle",
+        "dp class",
+        "dp3",
+        "dp-3",
+        "loss of position",
+        "prs ",
+        "dgps",
+        "hydroacoustic",
+        "joystick dp",
+    ],
     Zone.PUENTE: ["puente", "bridge", "naveg", "ecdis", "colreg", "guardia"],
     Zone.MAQUINARIA: ["maquin", "motor", "engine", "propul", "generador", "diésel", "diesel"],
     Zone.CUBIERTA: ["cubierta", "deck", "carga", "amarre"],
@@ -55,6 +70,7 @@ def _parse_header_zone(text: str) -> Zone | None:
     # Tomar la primera zona reconocible
     order = [
         Zone.EMERGENCIAS,
+        Zone.POSICIONAMIENTO_DINAMICO,
         Zone.COMUNICACIONES,
         Zone.ELECTRICIDAD,
         Zone.MAQUINARIA,
@@ -71,6 +87,9 @@ def _parse_header_zone(text: str) -> Zone | None:
         "bridge": Zone.PUENTE,
         "máquina": Zone.MAQUINARIA,
         "maquina": Zone.MAQUINARIA,
+        "dp": Zone.POSICIONAMIENTO_DINAMICO,
+        "dynamic positioning": Zone.POSICIONAMIENTO_DINAMICO,
+        "posicionamiento": Zone.POSICIONAMIENTO_DINAMICO,
     }
     for k, z in aliases.items():
         if k in raw:

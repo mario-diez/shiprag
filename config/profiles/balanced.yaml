@@ -42,6 +42,11 @@ models:
     n_gpu_layers: 99
     temperature: 0.1
     max_tokens: 384
+  verifier:
+    backend: auto
+    name_or_path: models/verifier/mDeBERTa-v3-base-mnli-xnli
+    fallback: lexical
+    device: cpu
 
 retrieval:
   lexical_top_k: 50

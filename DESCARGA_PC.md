@@ -50,5 +50,6 @@ shiprag --profile lite serve --port 8080
 
 ## Importante
 
-- Este agente **no tiene repo GitHub enlazado**. Hasta que lo subas a un remoto, el código vive en la sesión cloud.
-- Perfil `lite` = suficiente para validar. Modelos grandes solo cuando tú lo decidas (`home` / `server`).
+- Perfil `lite` = suficiente para validar el flujo.
+- Subir de nivel: `home` → `balanced`/`workstation` (prototipo) → `server` (producción a bordo).
+- Resumen de lo nuevo: [docs/NOVEDADES.md](docs/NOVEDADES.md) · arranque: [QUICKSTART_CASA.md](QUICKSTART_CASA.md).

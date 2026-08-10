@@ -9,10 +9,12 @@ Open WebUI (puerto 3000)
     │  POST /v1/chat/completions
     ▼
 ShipRAG (puerto 8080)
-    │  router → retrieve → extractivo/abstención
+    │  router (emb/keywords) → retrieve → generate → verifier (± NLI)
     ▼
 Respuesta + citas (en el texto del chat)
 ```
+
+El chat de Open WebUI **no** sustituye el pipeline: emergencias siguen en extractivo, y si el grounding falla ShipRAG se abstiene.
 
 Modelos visibles en Open WebUI:
 

@@ -19,7 +19,7 @@ from shiprag.core.schemas import (
 from shiprag.experts.expert import ZoneExpert
 from shiprag.experts.router import QueryRouter
 from shiprag.generation.generator import ExtractiveGenerator, build_generator
-from shiprag.generation.verifier import AnswerVerifier
+from shiprag.generation.verifier import build_verifier
 from shiprag.index.store import HybridIndex
 from shiprag.retrieval.reranker import LexicalReranker
 
@@ -31,10 +31,10 @@ class Orchestrator:
         self.cfg = cfg or load_config()
         ensure_runtime_dirs(self.cfg)
         self.index = index or HybridIndex(self.cfg)
-        self.router = QueryRouter(self.cfg)
+        self.router = QueryRouter(self.cfg, embedder=self.index.embedder)
         self.generator = build_generator(self.cfg)
         self.extractive = ExtractiveGenerator()
-        self.verifier = AnswerVerifier(self.cfg)
+        self.verifier = build_verifier(self.cfg)
         self._experts: dict[str, ZoneExpert] = {}
 
     def expert(self, zone: Zone) -> ZoneExpert:

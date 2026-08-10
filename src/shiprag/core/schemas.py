@@ -21,6 +21,7 @@ class Zone(str, Enum):
     EMERGENCIAS = "emergencias"
     ELECTRICIDAD = "electricidad"
     COMUNICACIONES = "comunicaciones"
+    POSICIONAMIENTO_DINAMICO = "posicionamiento_dinamico"
     GENERAL = "general"
 
 

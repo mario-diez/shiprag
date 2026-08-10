@@ -1,12 +1,15 @@
-# Perfil SERVER — estación de trabajo / servidor a bordo con más RAM/GPU
-# Pensado para embeddings/reranker de calidad y LLM GGUF opcional.
+# Perfil SERVER — producción a bordo (tier pesado)
+# Distinto de workstation (banco de pruebas ~12GB VRAM).
+# Stack objetivo: BGE-M3 + bge-reranker-v2-m3 + Qwen3-32B Q4_K_M.
+# Si el hardware del buque no aguanta, fallback_name_or_path apunta al stack workstation.
 
 profile:
   id: server
-  label: Server (alto cómputo)
+  label: Server (producción a bordo)
   description: >
-    Calidad operativa. Requiere pesos descargados en models/ antes de zarpar.
-    Puede usar GPU si device=cuda y hay drivers.
+    Tier de producción a bordo. Embeddings/reranker/LLM pesados.
+    Requiere pesos en models/ antes de zarpar. Si falla la carga del stack
+    primario, cae automáticamente al stack workstation (e5-base + bge-base + Qwen2.5-7B).
 
 paths:
   index_dir: data/indexes/server
@@ -14,23 +17,34 @@ paths:
 models:
   embedding:
     backend: auto
-    name_or_path: models/embeddings/multilingual-e5-base
+    name_or_path: models/embeddings/bge-m3
     fallback: hash
-    device: cpu   # cambiar a cuda si hay GPU
+    fallback_name_or_path: models/embeddings/multilingual-e5-base
+    device: cuda
     normalize: true
-    dim: 768
+    dim: 1024
   reranker:
     backend: auto
-    name_or_path: models/reranker/bge-reranker-base
+    name_or_path: models/reranker/bge-reranker-v2-m3
     fallback: lexical
-    device: cpu   # cambiar a cuda si hay GPU
+    fallback_name_or_path: models/reranker/bge-reranker-base
+    device: cuda
   llm:
-    enabled: false  # poner true solo si hay GGUF local
-    name_or_path: models/llm/model.gguf
-    n_ctx: 4096
-    n_gpu_layers: 0  # >0 si GPU + llama-cpp compilado con CUDA/Metal
+    # Pon enabled: true solo cuando el GGUF esté en models/llm/
+    enabled: true
+    name_or_path: models/llm/qwen3-32b-instruct-q4_k_m.gguf
+    fallback_name_or_path: models/llm/qwen2.5-7b-instruct-q4_k_m.gguf
+    n_ctx: 8192
+    n_gpu_layers: 60
     temperature: 0.1
     max_tokens: 512
+  verifier:
+    backend: auto
+    name_or_path: models/verifier/mDeBERTa-v3-base-mnli-xnli
+    fallback: lexical
+    device: cpu
+    entailment_threshold: 0.5
+    emergency_entailment_threshold: 0.65
 
 retrieval:
   lexical_top_k: 50
