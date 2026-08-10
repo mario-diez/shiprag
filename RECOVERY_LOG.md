@@ -245,3 +245,8 @@ OK docs/MODELS_WORKSTATION.md lines=89 hunks=1 [turn-17:step:7:tool]
 OK src/shiprag/orchestration/pipeline.py lines=169 hunks=2 [turn-17:step:12:tool]
 SKIP turn-17:step:13:tool
 OK README.md lines=240 hunks=1 [turn-17:step:16:tool]
+
+## Git
+- Branch: `cursor/shiprag-offline-mvp-a2a3`
+- Commit: `53e25e8` succeeded locally
+- Push: skipped — no `origin` remote configured in this recovered workspace (`repoUrl` null)
