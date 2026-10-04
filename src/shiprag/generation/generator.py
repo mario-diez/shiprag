@@ -357,12 +357,17 @@ def build_context(
     for it in items[:max_sources]:
         ch = it.chunk
         n = len(used) + 1
+
+        def attr(value: object) -> str:
+            return str(value).replace('"', "'")
+
         header = (
-            f'<fuente id="{n}" titulo="{ch.title}" version="{ch.version}" '
-            f'pagina="{ch.page_start}" seccion="{ch.section or "-"}">\n'
+            f'<fuente id="{n}" titulo="{attr(ch.title)}" version="{attr(ch.version)}" '
+            f'pagina="{ch.page_start}" seccion="{attr(ch.section or "-")}">\n'
         )
         footer = "\n</fuente>"
-        text = ch.text.strip()
+        # Un documento no puede abrir/cerrar fuentes falsas (ni disparar el stop "<fuente")
+        text = ch.text.strip().replace("<fuente", "< fuente").replace("</fuente", "</ fuente")
         block = header + text + footer
         if total + len(block) > max_chars:
             if used:
