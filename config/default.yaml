@@ -34,12 +34,22 @@ models:
     device: cpu
   llm:
     enabled: false
-    name_or_path: models/llm/model.gguf
+    # backend: llama_cpp (GGUF dentro del proceso) | openai_compat (servidor HTTP:
+    # vLLM, Ollama, llama.cpp server, LM Studio, TGI o proveedor cloud compatible)
+    backend: llama_cpp
+    name_or_path: models/llm/model.gguf       # llama_cpp
     fallback_name_or_path: ""
-    n_ctx: 4096
+    base_url: ""                              # openai_compat, p.ej. http://127.0.0.1:11434/v1
+    model: ""                                 # openai_compat, nombre del modelo servido
+    api_key_env: ""                           # variable de entorno con la API key (nunca la key aquí)
+    timeout_s: 60
+    n_ctx: 4096                               # ventana de contexto del modelo (también en remoto)
     n_gpu_layers: 0
     temperature: 0.1
     max_tokens: 512
+    system_prompt: ""                         # vacío → prompt anclado a evidencia por defecto
+    prompt_suffix: ""                         # p.ej. "/no_think" con Qwen3
+    context_max_chars: 0                      # 0 → automático según n_ctx y max_tokens
   verifier:
     # backend: lexical | auto | nli
     backend: lexical
@@ -84,6 +94,34 @@ router:
   allow_multi_expert: true
   max_experts: 3
   fallback_zone: general
+  # Regex que fuerzan modo emergencia (zona emergencias + extractivo/citas).
+  # Lista vacía [] → sin override (p.ej. documentación de oficina, donde
+  # "plan de emergencia" no es una emergencia en curso).
+  emergency_patterns:
+    - 'hombre\s+al\s+agua'
+    - 'man\s+overboard'
+    - '\bmayday\b'
+    - '\bdistress\b'
+    - 'abandono\s+del?\s+buque'
+    - '\bsopep\b'
+    - 'incendio\s+en'
+    - '\bblackout\b'
+    - 'inundaci[oó]n'
+    - 'colisi[oó]n'
+    - 'varada'
+    - 'emergencia'
+
+chat:
+  # /v1/chat/completions: reescribir seguimientos ("¿y si no arranca?") como consulta autónoma
+  condense_followups: true
+  use_llm_rewrite: true      # con LLM activo; si no, heurística (antepone la pregunta anterior)
+  history_turns: 3
+  followup_max_terms: 6
+
+ingest:
+  # Copia los originales a data/raw (paquete autocontenido). En empresa, con los
+  # documentos ya en su repositorio de origen, puede desactivarse (o --no-copy).
+  copy_to_raw: true
 
 zones:
   - id: puente
@@ -194,7 +232,13 @@ api:
   host: 127.0.0.1
   port: 8080
   cors_origins: []
+  # Si la variable tiene valor, POST /api/ingest y DELETE /api/documents exigen
+  # "Authorization: Bearer <token>". Sin valor: escritura abierta (aviso en log).
+  admin_token_env: SHIPRAG_ADMIN_TOKEN
+  max_upload_mb: 200
 
 logging:
   level: INFO
   retrieval_trace: true
+  trace_format: jsonl        # jsonl → data/logs/trace-YYYYMMDD.jsonl | json → un fichero por consulta
+  trace_retention_days: 0    # 0 → conservar siempre

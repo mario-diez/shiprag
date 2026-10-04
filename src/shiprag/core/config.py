@@ -46,12 +46,28 @@ class RerankerConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     enabled: bool = False
+    # backend: llama_cpp (GGUF en proceso) | openai_compat (servidor HTTP: vLLM, Ollama,
+    # llama.cpp server, LM Studio, TGI o un proveedor cloud con API compatible)
+    backend: str = "llama_cpp"
+    # llama_cpp: ruta al GGUF
     name_or_path: str = "models/llm/model.gguf"
     fallback_name_or_path: str = ""
+    # openai_compat: URL base (…/v1) y nombre del modelo servido
+    base_url: str = ""
+    model: str = ""
+    # Nombre de la variable de entorno con la API key (nunca la key en el YAML)
+    api_key_env: str = ""
+    timeout_s: float = 60.0
     n_ctx: int = 4096
     n_gpu_layers: int = 0
     temperature: float = 0.1
     max_tokens: int = 512
+    # Vacío → prompt genérico anclado a evidencia (ver generation/generator.py)
+    system_prompt: str = ""
+    # Texto añadido al mensaje de usuario (p.ej. "/no_think" para Qwen3)
+    prompt_suffix: str = ""
+    # Presupuesto de evidencia en caracteres; 0 → automático según n_ctx y max_tokens
+    context_max_chars: int = 0
 
 
 class VerifierConfig(BaseModel):
@@ -112,6 +128,22 @@ class ZoneConfig(BaseModel):
     criticality: str | None = None
 
 
+DEFAULT_EMERGENCY_PATTERNS = [
+    r"hombre\s+al\s+agua",
+    r"man\s+overboard",
+    r"\bmayday\b",
+    r"\bdistress\b",
+    r"abandono\s+del?\s+buque",
+    r"\bsopep\b",
+    r"incendio\s+en",
+    r"\bblackout\b",
+    r"inundaci[oó]n",
+    r"colisi[oó]n",
+    r"varada",
+    r"emergencia",
+]
+
+
 class RouterConfig(BaseModel):
     # backend: auto | keywords | embedding
     backend: str = "auto"
@@ -119,6 +151,30 @@ class RouterConfig(BaseModel):
     allow_multi_expert: bool = True
     max_experts: int = 3
     fallback_zone: str = "general"
+    # Regex que fuerzan modo emergencia (zona emergencias + extractivo).
+    # Lista vacía → sin override automático (p.ej. documentación de oficina).
+    emergency_patterns: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_EMERGENCY_PATTERNS)
+    )
+
+
+class ChatConfig(BaseModel):
+    """Conversación vía /v1/chat/completions (Open WebUI)."""
+
+    # Reescribir preguntas de seguimiento ("¿y si no arranca?") como consulta autónoma
+    condense_followups: bool = True
+    # Con LLM activo, la reescritura la hace el LLM; si no, heurística
+    use_llm_rewrite: bool = True
+    # Turnos de usuario previos que se tienen en cuenta
+    history_turns: int = 3
+    # Una pregunta con ≤ N términos de contenido se trata como seguimiento
+    followup_max_terms: int = 6
+
+
+class IngestConfig(BaseModel):
+    # Copiar los originales a data/raw (paquete autocontenido a bordo).
+    # En empresa, con los documentos ya en su origen, se puede desactivar.
+    copy_to_raw: bool = True
 
 
 class PathsConfig(BaseModel):
@@ -134,11 +190,19 @@ class APIConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8080
     cors_origins: list[str] = Field(default_factory=list)
+    # Si esta variable de entorno tiene valor, ingesta/borrado exigen
+    # "Authorization: Bearer <token>". Sin valor → escritura abierta (aviso en log).
+    admin_token_env: str = "SHIPRAG_ADMIN_TOKEN"
+    max_upload_mb: int = 200
 
 
 class LoggingConfig(BaseModel):
     level: str = "INFO"
     retrieval_trace: bool = True
+    # jsonl → un fichero por día (trace-YYYYMMDD.jsonl) | json → un fichero por consulta
+    trace_format: str = "jsonl"
+    # 0 → conservar siempre; N → borrar traces con más de N días
+    trace_retention_days: int = 0
 
 
 class AppConfig(BaseModel):
@@ -150,6 +214,8 @@ class AppConfig(BaseModel):
     ocr: OCRConfig = Field(default_factory=OCRConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     router: RouterConfig = Field(default_factory=RouterConfig)
+    chat: ChatConfig = Field(default_factory=ChatConfig)
+    ingest: IngestConfig = Field(default_factory=IngestConfig)
     zones: list[ZoneConfig] = Field(default_factory=list)
     api: APIConfig = Field(default_factory=APIConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
@@ -187,6 +253,7 @@ class AppConfig(BaseModel):
             "reranker_backend": self.models.reranker.backend,
             "verifier_backend": self.models.verifier.backend,
             "llm_enabled": self.models.llm.enabled,
+            "llm_backend": self.models.llm.backend,
             "index_dir": str(self.index_path),
             "device_embedding": self.models.embedding.device,
             "device_reranker": self.models.reranker.device,
@@ -199,6 +266,9 @@ class Settings(BaseSettings):
 
     shiprag_config: str | None = None
     shiprag_profile: str | None = None
+    # YAML opcional aplicado encima del perfil (p.ej. LLM remoto de esta máquina),
+    # sin tocar ficheros versionados. Ver config/local.example.yaml
+    shiprag_local_config: str | None = None
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -284,6 +354,12 @@ def load_config(
             raw = _deep_merge(raw, overlay)
         except FileNotFoundError:
             pass
+
+    if settings.shiprag_local_config:
+        local_path = Path(settings.shiprag_local_config)
+        if not local_path.is_absolute():
+            local_path = (ROOT / local_path).resolve()
+        raw = _deep_merge(raw, _load_yaml(local_path))
 
     cfg = AppConfig.model_validate(raw)
     # Asegurar id de perfil coherente

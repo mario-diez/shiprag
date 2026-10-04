@@ -38,6 +38,9 @@ models:
     n_gpu_layers: 60
     temperature: 0.1
     max_tokens: 512
+    # Qwen3 razona en <think> por defecto: gasta tokens/latencia y ShipRAG lo descarta.
+    # "/no_think" lo desactiva en Qwen3; otros modelos lo ignoran.
+    prompt_suffix: /no_think
   verifier:
     backend: auto
     name_or_path: models/verifier/mDeBERTa-v3-base-mnli-xnli

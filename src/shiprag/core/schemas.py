@@ -72,6 +72,12 @@ class DocumentMeta(BaseModel):
     date: str | None = None
     tags: list[str] = Field(default_factory=list)
     extra: dict[str, Any] = Field(default_factory=dict)
+    # Ciclo de vida en el índice (vacíos en índices creados antes de existir estos campos)
+    source_uri: str = ""  # identidad estable del original (ruta absoluta / upload)
+    content_hash: str = ""  # sha256 del fichero original
+    ingest_fingerprint: str = ""  # hash de contenido + metadatos + config de ingesta
+    ingested_at: str | None = None
+    chunk_count: int = 0
 
 
 class ExtractedBlock(BaseModel):
@@ -143,6 +149,8 @@ class QueryRequest(BaseModel):
     mode: ResponseMode = ResponseMode.AUTO
     top_k: int | None = None
     emergency: bool = False
+    # Pregunta literal del usuario si `query` es una reescritura (seguimiento en chat)
+    original_query: str | None = None
 
 
 class ScoredChunk(BaseModel):
@@ -188,6 +196,8 @@ class RetrievalTrace(BaseModel):
     evidence_score: float = 0.0
     grounding_score: float = 0.0
     abstain_reason: str | None = None
+    original_query: str | None = None
+    generation: dict[str, Any] = Field(default_factory=dict)
 
 
 class QueryResponse(BaseModel):
@@ -200,3 +210,5 @@ class QueryResponse(BaseModel):
     mode_used: ResponseMode = ResponseMode.EXTRACTIVE
     zones_used: list[str] = Field(default_factory=list)
     trace: RetrievalTrace | None = None
+    # Backend, modelo, latencia y motivo de fallback del LLM (vacío en extractivo)
+    generation_info: dict[str, Any] = Field(default_factory=dict)
