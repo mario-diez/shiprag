@@ -25,6 +25,8 @@ async function init() {
     const badge = document.getElementById("profile-badge");
     badge.textContent = `perfil ${rt.profile || "?"}`;
     badge.title = rt.profile_label || "";
+    // Solo se pide token si el servidor protege la escritura (SHIPRAG_ADMIN_TOKEN)
+    document.getElementById("ingest-token-label").hidden = !h.write_protected;
     const zones = await api("/api/zones");
     for (const sel of ["zone", "ingest-zone"]) {
       const node = document.getElementById(sel);
@@ -119,8 +121,10 @@ document.getElementById("ingest-form").addEventListener("submit", async (ev) => 
   const z = document.getElementById("ingest-zone").value;
   if (z) fd.append("zone", z);
   document.getElementById("ingest-result").textContent = "Indexando…";
+  const token = document.getElementById("ingest-token").value.trim();
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
   try {
-    const data = await api("/api/ingest", { method: "POST", body: fd });
+    const data = await api("/api/ingest", { method: "POST", body: fd, headers });
     document.getElementById("ingest-result").textContent = JSON.stringify(data, null, 2);
   } catch (e) {
     document.getElementById("ingest-result").textContent = "Error: " + e.message;

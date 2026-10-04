@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import os
+import re
+import secrets
+import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -19,11 +25,26 @@ from shiprag.core.config import (
 )
 from shiprag.core.logging import setup_logging
 from shiprag.core.schemas import DocType, QueryRequest, QueryResponse, Zone
+from shiprag.ingest.pdf_extractor import SUPPORTED_EXTENSIONS
 from shiprag.ingest.pipeline import IngestPipeline
+from shiprag.ingest.registry import DocumentRegistry
 from shiprag.orchestration.pipeline import Orchestrator
 from shiprag.api.openai_compat import build_openai_router
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "ui" / "static"
+
+UNSAFE_NAME_RE = re.compile(r"[^\w.\- ]+", re.UNICODE)
+WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
+                    *(f"LPT{i}" for i in range(1, 10))}
+
+
+def safe_upload_name(filename: str | None) -> str:
+    """Nombre base sin rutas ni caracteres peligrosos (evita path traversal: "../../x")."""
+    name = (filename or "").replace("\\", "/").split("/")[-1]
+    name = UNSAFE_NAME_RE.sub("_", name).strip(" .")[:180]
+    if Path(name).stem.upper() in WINDOWS_RESERVED:
+        name = f"_{name}"
+    return name or "upload.bin"
 
 
 def create_app(cfg: AppConfig | None = None) -> FastAPI:
@@ -39,17 +60,48 @@ def create_app(cfg: AppConfig | None = None) -> FastAPI:
     )
 
     state: dict[str, Any] = {"orch": None, "ingest": None, "cfg": cfg}
+    init_lock = threading.Lock()
 
     def get_orch() -> Orchestrator:
+        # Doble comprobación: dos peticiones simultáneas no deben cargar los modelos dos veces
         if state["orch"] is None:
-            state["orch"] = Orchestrator(state["cfg"])
-            state["ingest"] = IngestPipeline(state["cfg"], index=state["orch"].index)
+            with init_lock:
+                if state["orch"] is None:
+                    orch = Orchestrator(state["cfg"])
+                    state["ingest"] = IngestPipeline(state["cfg"], index=orch.index)
+                    state["orch"] = orch
         return state["orch"]
 
     def get_ingest() -> IngestPipeline:
         get_orch()
         assert state["ingest"] is not None
         return state["ingest"]
+
+    token_env = cfg.api.admin_token_env
+
+    def admin_token() -> str:
+        # Se lee en cada petición: rotar el token no exige reiniciar
+        return os.environ.get(token_env, "") if token_env else ""
+
+    def require_admin(authorization: str | None = Header(default=None)) -> None:
+        expected = admin_token()
+        if not expected:
+            return
+        provided = (authorization or "").strip()
+        if provided.lower().startswith("bearer "):
+            provided = provided[7:].strip()
+        if not secrets.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
+            raise HTTPException(
+                401,
+                "Token de administración requerido para esta operación",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    if not admin_token():
+        logger.warning(
+            "Ingesta y borrado SIN protección: define %s para exigir token de administración",
+            token_env or "api.admin_token_env",
+        )
 
     # OpenAI-compatible API (Open WebUI, clients OpenAI, etc.)
     app.include_router(build_openai_router(get_orch))
@@ -64,6 +116,9 @@ def create_app(cfg: AppConfig | None = None) -> FastAPI:
             "runtime": state["cfg"].runtime_summary(),
             "zones_indexed": orch.index.zones_with_data(),
             "embedder": orch.index.embedder.name,
+            "generator": getattr(orch.generator, "name", "extractive"),
+            "documents": len(get_ingest().registry),
+            "write_protected": bool(admin_token()),
             "openai_compat": {
                 "models": "/v1/models",
                 "chat": "/v1/chat/completions",
@@ -94,7 +149,7 @@ def create_app(cfg: AppConfig | None = None) -> FastAPI:
             raise HTTPException(400, "query vacía")
         return get_orch().query(req)
 
-    @app.post("/api/ingest")
+    @app.post("/api/ingest", dependencies=[Depends(require_admin)])
     async def ingest(
         file: UploadFile = File(...),
         zone: str | None = Form(default=None),
@@ -102,16 +157,44 @@ def create_app(cfg: AppConfig | None = None) -> FastAPI:
         title: str | None = Form(default=None),
         version: str = Form(default="1.0"),
         language: str = Form(default="es"),
+        force: bool = Form(default=False),
     ) -> dict[str, Any]:
+        name = safe_upload_name(file.filename)
+        if Path(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
+            raise HTTPException(
+                415,
+                f"Formato no soportado: '{Path(name).suffix or name}'. "
+                f"Admitidos: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
+            )
+        try:
+            z = Zone(zone) if zone else None
+            dt = DocType(doc_type) if doc_type else None
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
         raw_dir = state["cfg"].raw_path / "uploads"
         raw_dir.mkdir(parents=True, exist_ok=True)
-        dest = raw_dir / (file.filename or "upload.bin")
-        content = await file.read()
-        dest.write_bytes(content)
-        z = Zone(zone) if zone else None
-        dt = DocType(doc_type) if doc_type else None
-        try:
-            result = get_ingest().ingest_file(
+        dest = raw_dir / name
+        limit = int(state["cfg"].api.max_upload_mb) * 1024 * 1024
+        # Volcado por bloques a un temporal: tope de tamaño sin cargar todo en memoria,
+        # y el fichero anterior no se pisa hasta tener la subida completa
+        tmp = raw_dir / f".{uuid.uuid4().hex}.part"
+        size = 0
+        too_big = False
+        with tmp.open("wb") as fh:
+            while chunk := await file.read(1 << 20):
+                size += len(chunk)
+                if size > limit:
+                    too_big = True
+                    break
+                fh.write(chunk)
+        if too_big:
+            tmp.unlink(missing_ok=True)
+            raise HTTPException(413, f"Fichero mayor que {state['cfg'].api.max_upload_mb} MB")
+        os.replace(tmp, dest)
+
+        def _run() -> dict[str, Any]:
+            return get_ingest().ingest_file(
                 dest,
                 zone=z,
                 doc_type=dt,
@@ -119,20 +202,30 @@ def create_app(cfg: AppConfig | None = None) -> FastAPI:
                 version=version,
                 language=language,
                 copy_to_raw=False,
+                force=force,
             )
+
+        try:
+            # Extracción/embeddings pueden tardar minutos: fuera del event loop
+            return await run_in_threadpool(_run)
         except Exception as exc:
             raise HTTPException(400, f"Ingesta fallida: {exc}") from exc
-        return result
 
     @app.get("/api/documents")
     def list_documents() -> list[dict[str, Any]]:
-        docs_dir = state["cfg"].index_path / "documents"
-        if not docs_dir.exists():
-            return []
-        out = []
-        for p in sorted(docs_dir.glob("*.json")):
-            out.append(__import__("json").loads(p.read_text(encoding="utf-8")))
-        return out
+        registry = (
+            state["ingest"].registry
+            if state["ingest"] is not None
+            else DocumentRegistry(state["cfg"].index_path / "documents")
+        )
+        return [m.model_dump(mode="json") for m in registry.all()]
+
+    @app.delete("/api/documents/{doc_id}", dependencies=[Depends(require_admin)])
+    def delete_document(doc_id: str) -> dict[str, Any]:
+        try:
+            return get_ingest().delete_document(doc_id)
+        except KeyError as exc:
+            raise HTTPException(404, f"Documento no encontrado: {doc_id}") from exc
 
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
