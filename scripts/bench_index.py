@@ -52,6 +52,21 @@ def make_doc(rng: random.Random, vocab: list[str], doc_n: int, chunks: int, word
     ]
 
 
+def _cleanup(path: Path) -> None:
+    """Borra el índice temporal; Chroma mantiene ficheros abiertos hasta liberar su caché."""
+    import gc
+    import shutil
+
+    try:
+        from chromadb.api.client import SharedSystemClient
+
+        SharedSystemClient.clear_system_cache()
+    except Exception:
+        pass
+    gc.collect()
+    shutil.rmtree(path, ignore_errors=True)
+
+
 def run(n_docs: int, mode: str, args: argparse.Namespace) -> dict | None:
     clear_config_cache()
     base = load_config(profile="lite")
@@ -67,6 +82,8 @@ def run(n_docs: int, mode: str, args: argparse.Namespace) -> dict | None:
     )
     index = HybridIndex(cfg, embedder=HashEmbedding(dim=384))
     if mode == "batch" and not hasattr(index, "batch"):
+        if not args.keep:
+            _cleanup(tmp)
         return None
 
     rng = random.Random(args.seed)
@@ -97,6 +114,9 @@ def run(n_docs: int, mode: str, args: argparse.Namespace) -> dict | None:
     t2 = time.perf_counter()
     HybridIndex(cfg, embedder=HashEmbedding(dim=384)).lexical(Zone.GENERAL)
     reload_s = time.perf_counter() - t2
+    del index
+    if not args.keep:
+        _cleanup(tmp)
     return {
         "mode": mode,
         "docs": n_docs,
@@ -119,6 +139,7 @@ def main() -> int:
     p.add_argument("--modes", nargs="+", default=["per_file", "batch"], choices=["per_file", "batch"])
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--out", default=None, help="guardar resultados en JSON")
+    p.add_argument("--keep", action="store_true", help="conservar los índices temporales")
     args = p.parse_args()
 
     rows = []
