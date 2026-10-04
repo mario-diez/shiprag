@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import threading
 from pathlib import Path
 
 import numpy as np
 
+from shiprag.core import model_cache
 from shiprag.core.config import AppConfig, load_config
 
 logger = logging.getLogger("shiprag.embeddings")
@@ -76,8 +78,13 @@ class SentenceTransformerEmbedding(EmbeddingBackend):
         self._model = SentenceTransformer(name_or_path, device=device)
         self._normalize = normalize
         self._name = name_or_path
+        # Instancia compartida entre hilos (model_cache): una inferencia a la vez
+        self._lock = threading.Lock()
         # Infer dim
-        self._dim = int(self._model.get_sentence_embedding_dimension())
+        get_dim = getattr(self._model, "get_embedding_dimension", None) or (
+            self._model.get_sentence_embedding_dimension
+        )
+        self._dim = int(get_dim())
 
     @property
     def dim(self) -> int:
@@ -90,21 +97,30 @@ class SentenceTransformerEmbedding(EmbeddingBackend):
     def embed_documents(self, texts: list[str]) -> np.ndarray:
         # E5 models expect "passage: " prefix; apply softly if name contains e5
         prefix = "passage: " if "e5" in self._name.lower() else ""
-        embs = self._model.encode(
-            [prefix + t for t in texts],
-            normalize_embeddings=self._normalize,
-            show_progress_bar=False,
-        )
+        with self._lock:
+            embs = self._model.encode(
+                [prefix + t for t in texts],
+                normalize_embeddings=self._normalize,
+                show_progress_bar=False,
+            )
         return np.asarray(embs, dtype=np.float32)
 
     def embed_query(self, text: str) -> np.ndarray:
         prefix = "query: " if "e5" in self._name.lower() else ""
-        emb = self._model.encode(
-            prefix + text,
-            normalize_embeddings=self._normalize,
-            show_progress_bar=False,
-        )
+        with self._lock:
+            emb = self._model.encode(
+                prefix + text,
+                normalize_embeddings=self._normalize,
+                show_progress_bar=False,
+            )
         return np.asarray(emb, dtype=np.float32)
+
+
+def _load_sentence_transformer(
+    name_or_path: str, device: str, normalize: bool
+) -> SentenceTransformerEmbedding:
+    logger.info("Cargando embeddings desde %s", name_or_path)
+    return SentenceTransformerEmbedding(name_or_path, device=device, normalize=normalize)
 
 
 def _resolve_model_candidate(cfg: AppConfig, name_or_path: str | None) -> str | None:
@@ -134,13 +150,13 @@ def build_embedder(cfg: AppConfig | None = None) -> EmbeddingBackend:
         candidates.append(fb)
 
     if backend in {"auto", "sentence_transformers", "st"}:
+        device = cfg.models.embedding.device
+        normalize = cfg.models.embedding.normalize
         for candidate in candidates:
             try:
-                logger.info("Cargando embeddings desde %s", candidate)
-                return SentenceTransformerEmbedding(
-                    candidate,
-                    device=cfg.models.embedding.device,
-                    normalize=cfg.models.embedding.normalize,
+                return model_cache.get_or_create(
+                    ("sentence_transformer", candidate, device, normalize),
+                    lambda: _load_sentence_transformer(candidate, device, normalize),
                 )
             except Exception as exc:
                 logger.warning("No se pudo cargar ST embeddings %s (%s).", candidate, exc)

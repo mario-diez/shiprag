@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from pathlib import Path
 
+from shiprag.core import model_cache
 from shiprag.core.config import AppConfig, load_config
 from shiprag.core.schemas import ScoredChunk
 
@@ -84,6 +86,8 @@ class CrossEncoderReranker(Reranker):
 
         self._model = CrossEncoder(name_or_path, device=device)
         self._name = name_or_path
+        # Instancia compartida entre expertos e hilos: una inferencia a la vez
+        self._lock = threading.Lock()
 
     @property
     def name(self) -> str:
@@ -93,7 +97,8 @@ class CrossEncoderReranker(Reranker):
         if not items:
             return []
         pairs = [(query, it.chunk.text[:2000]) for it in items]
-        scores = self._model.predict(pairs)
+        with self._lock:
+            scores = self._model.predict(pairs, show_progress_bar=False)
         out: list[ScoredChunk] = []
         for it, sc in zip(items, scores):
             final = float(sc)
@@ -109,6 +114,11 @@ class CrossEncoderReranker(Reranker):
             )
         out.sort(key=lambda x: x.score, reverse=True)
         return out[:top_k]
+
+
+def _load_cross_encoder(name_or_path: str, device: str) -> CrossEncoderReranker:
+    logger.info("Cargando reranker %s", name_or_path)
+    return CrossEncoderReranker(name_or_path, device=device)
 
 
 def _resolve_reranker_candidate(cfg: AppConfig, name_or_path: str | None) -> str | None:
@@ -137,10 +147,14 @@ def build_reranker(cfg: AppConfig | None = None, emergency_bias: bool = False) -
         candidates.append(fb)
 
     if backend in {"auto", "cross_encoder", "ce"}:
+        device = cfg.models.reranker.device
         for candidate in candidates:
             try:
-                logger.info("Cargando reranker %s", candidate)
-                return CrossEncoderReranker(candidate, device=cfg.models.reranker.device)
+                # Un único modelo por proceso: antes cada experto de zona cargaba su copia
+                return model_cache.get_or_create(
+                    ("cross_encoder", candidate, device),
+                    lambda: _load_cross_encoder(candidate, device),
+                )
             except Exception as exc:
                 logger.warning("Reranker CE falló en %s (%s).", candidate, exc)
 
