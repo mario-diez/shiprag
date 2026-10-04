@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import platform
 import shutil
 import sys
@@ -23,6 +24,22 @@ def _fail(name: str, detail: str) -> dict[str, Any]:
 
 def _warn(name: str, detail: str) -> dict[str, Any]:
     return {"name": name, "ok": True, "warn": True, "detail": detail}
+
+
+def _llm_http_check(base_url: str, model: str, api_key_env: str) -> dict[str, Any]:
+    if not base_url or not model:
+        return _fail("llm_http", "llm.backend=openai_compat requiere base_url y model")
+    try:
+        import httpx
+
+        key = os.environ.get(api_key_env, "") if api_key_env else ""
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        r = httpx.get(base_url.rstrip("/") + "/models", headers=headers, timeout=3.0)
+        if r.status_code < 400:
+            return _ok("llm_http", f"{base_url} responde · modelo {model}")
+        return _warn("llm_http", f"{base_url}/models → HTTP {r.status_code}")
+    except Exception as exc:
+        return _warn("llm_http", f"{base_url} no responde ({type(exc).__name__}) — usará extractivo")
 
 
 def run_doctor(cfg: AppConfig | None = None) -> dict[str, Any]:
@@ -83,6 +100,49 @@ def run_doctor(cfg: AppConfig | None = None) -> dict[str, Any]:
             )
     else:
         checks.append(_ok("embedding_weights", "no requeridos en lite"))
+
+    # LLM
+    llm = cfg.models.llm
+    backend = (llm.backend or "llama_cpp").lower()
+    if not llm.enabled:
+        checks.append(_ok("llm", "desactivado (respuestas extractivas)"))
+    elif backend in {"openai_compat", "openai", "http"}:
+        checks.append(_llm_http_check(llm.base_url, llm.model, llm.api_key_env))
+    else:
+        gguf = cfg.resolve(llm.name_or_path)
+        if gguf.exists():
+            checks.append(_ok("llm_weights", str(gguf)))
+        else:
+            checks.append(_warn("llm_weights", f"No existe {llm.name_or_path} — usará extractivo"))
+        if importlib.util.find_spec("llama_cpp") is None:
+            checks.append(_warn("dep:llama_cpp", "ausente — pip install -e '.[llm]'"))
+        elif llm.n_gpu_layers > 0:
+            try:
+                import llama_cpp
+
+                gpu = bool(llama_cpp.llama_supports_gpu_offload())
+            except Exception:
+                gpu = False
+            if gpu:
+                checks.append(_ok("llm_gpu", "llama-cpp-python con offload a GPU"))
+            else:
+                checks.append(
+                    _warn(
+                        "llm_gpu",
+                        f"n_gpu_layers={llm.n_gpu_layers} pero llama-cpp-python está compilado "
+                        "sin GPU: el LLM correrá en CPU (lento). Instala un wheel con CUDA "
+                        "o usa llm.backend=openai_compat (vLLM/Ollama).",
+                    )
+                )
+
+    # Seguridad de escritura
+    token_env = cfg.api.admin_token_env
+    if token_env and os.environ.get(token_env):
+        checks.append(_ok("admin_token", f"{token_env} definido: ingesta/borrado protegidos"))
+    else:
+        checks.append(
+            _warn("admin_token", f"{token_env or '(sin variable)'} vacío: ingesta/borrado abiertos")
+        )
 
     # Disco
     usage = shutil.disk_usage(str(ROOT))
