@@ -2,7 +2,8 @@
 
 Open WebUI → POST /v1/chat/completions → ShipRAG orchestrator.
 
-No usa un LLM cloud: reutiliza el pipeline extractivo/abstención de ShipRAG.
+Reutiliza el pipeline de ShipRAG (recuperación, generación anclada, abstención).
+Las preguntas de seguimiento se reescriben como consulta autónoma antes de buscar.
 """
 
 from __future__ import annotations
@@ -13,11 +14,14 @@ import uuid
 from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from shiprag import __version__
 from shiprag.core.schemas import QueryRequest, QueryResponse, ResponseMode, Zone
+from shiprag.generation.condense import CondensedQuery, condense_query
+from shiprag.generation.generator import LLMGenerator
 
 
 class ChatMessage(BaseModel):
@@ -70,7 +74,7 @@ def _model_to_query_flags(model: str) -> dict[str, Any]:
     return {"emergency": emergency, "mode": mode, "model_id": name or "shiprag"}
 
 
-def _format_answer(resp: QueryResponse) -> str:
+def _format_answer(resp: QueryResponse, condensed: CondensedQuery | None = None) -> str:
     """Texto que verá el usuario en Open WebUI (incluye citas visibles)."""
     lines: list[str] = []
     lines.append(resp.answer.strip())
@@ -80,6 +84,13 @@ def _format_answer(resp: QueryResponse) -> str:
         f"Estado: `{resp.status.value}` · confianza: `{resp.confidence:.3f}` · "
         f"modo: `{resp.mode_used.value}` · zonas: `{', '.join(resp.zones_used) or '-'}`"
     )
+    if condensed is not None and condensed.method != "none":
+        lines.append(f"Consulta interpretada ({condensed.method}): «{condensed.query}»")
+    gen = resp.generation_info or {}
+    if gen.get("fallback"):
+        lines.append("LLM no disponible para esta respuesta → semi-extractivo")
+    elif gen.get("model"):
+        lines.append(f"LLM: `{gen['model']}` · {gen.get('latency_ms', '?')} ms")
     if resp.clarification_question:
         lines.append(f"Clarificación: {resp.clarification_question}")
     if resp.conflicts:
@@ -218,14 +229,26 @@ def build_openai_router(get_orch: Callable) -> APIRouter:
                     if flags["mode"] == ResponseMode.AUTO:
                         flags["mode"] = ResponseMode.CITATIONS_ONLY
 
+        # Carga de modelos (primera petición) y consulta: fuera del event loop
+        orch = await run_in_threadpool(get_orch)
+        turns = [(m.role, _content_to_text(m.content)) for m in body.messages]
+        previous_users = [t for r, t in turns if r == "user"][:-1]
+        # Conversación en emergencia: se hereda la criticidad y no se deja reescribir al LLM
+        inherited_emergency = bool(previous_users) and orch.router.is_emergency(previous_users[-1])
+        llm = orch.generator if isinstance(orch.generator, LLMGenerator) else None
+        if flags["emergency"] or inherited_emergency:
+            llm = None
+        condensed = await run_in_threadpool(condense_query, turns, orch.cfg.chat, llm)
+        rewritten = condensed.method != "none" and bool(condensed.query)
+
         req = QueryRequest(
-            query=query,
+            query=condensed.query if rewritten else query,
             mode=flags["mode"],
-            emergency=bool(flags["emergency"]),
+            emergency=bool(flags["emergency"]) or (rewritten and inherited_emergency),
+            original_query=condensed.original if rewritten else None,
         )
-        orch = get_orch()
-        resp: QueryResponse = orch.query(req)
-        content = _format_answer(resp)
+        resp: QueryResponse = await run_in_threadpool(orch.query, req)
+        content = _format_answer(resp, condensed if rewritten else None)
         model_id = body.model or "shiprag"
 
         if body.stream:

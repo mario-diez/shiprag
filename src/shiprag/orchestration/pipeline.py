@@ -118,12 +118,17 @@ class Orchestrator:
             response = self.generator.generate(
                 req.query, merged, mode, max_citations=self.cfg.generation.max_citations
             )
+            if mode == ResponseMode.GENERATIVE and response.mode_used != ResponseMode.GENERATIVE:
+                # El LLM falló o no respondió: se verifica como lo que es (semi-extractivo)
+                mode = response.mode_used
+        generation_info = dict(response.generation_info)
         verified = self.verifier.verify(
             req.query, response, merged, emergency=decision.emergency, mode=mode
         )
         final = verified.response
         final.mode_used = mode
         final.zones_used = [z.value for z in zones]
+        final.generation_info = generation_info
 
         trace = RetrievalTrace(
             routed_zones=[z.value for z in zones],
@@ -152,12 +157,15 @@ class Orchestrator:
             abstain_reason=None
             if verified.accepted
             else final.status.value,
+            original_query=req.original_query,
+            generation=generation_info,
         )
         final.trace = trace
 
         if self.cfg.logging.retrieval_trace:
             payload: dict[str, Any] = {
                 "query": req.query,
+                "original_query": req.original_query,
                 "response_status": final.status.value,
                 "answer_preview": final.answer[:500],
                 "trace": trace.model_dump(mode="json"),

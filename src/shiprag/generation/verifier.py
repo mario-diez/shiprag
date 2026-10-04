@@ -11,9 +11,11 @@ from __future__ import annotations
 import logging
 import math
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+from shiprag.core import model_cache
 from shiprag.core.config import AppConfig, load_config
 from shiprag.core.schemas import (
     AnswerStatus,
@@ -136,6 +138,7 @@ class NLIEntailmentChecker:
 
         self._device = device
         self._name = name_or_path
+        self._lock = threading.Lock()
         self._tokenizer = AutoTokenizer.from_pretrained(name_or_path)
         self._model = AutoModelForSequenceClassification.from_pretrained(name_or_path)
         self._model.to(device)
@@ -160,7 +163,7 @@ class NLIEntailmentChecker:
             return []
         scores: list[float] = []
         torch = self._torch
-        with torch.no_grad():
+        with self._lock, torch.no_grad():
             for hyp in hypotheses:
                 inputs = self._tokenizer(
                     premise,
@@ -243,6 +246,9 @@ class AnswerVerifier:
         response.confidence = round(0.45 * e + 0.25 * g + 0.30 * qrel, 4)
 
         weak = (not items) or (e < e_th) or (qrel < q_th)
+        # El LLM declaró que la evidencia no contiene la respuesta → mismo trato que evidencia débil
+        llm_not_found = mode == ResponseMode.GENERATIVE and response.status == AnswerStatus.NOT_FOUND
+        weak = weak or llm_not_found
         if mode == ResponseMode.CITATIONS_ONLY and not weak and response.citations:
             nli_ok, nli_score = self._nli_ok(response, items, emergency=emergency)
             if not nli_ok:
@@ -349,8 +355,13 @@ def build_verifier(cfg: AppConfig | None = None) -> AnswerVerifier:
     candidate = _resolve_verifier_path(cfg, cfg.models.verifier.name_or_path)
     if backend in {"auto", "nli"} and candidate:
         try:
-            logger.info("Cargando verifier NLI desde %s", candidate)
-            nli = NLIEntailmentChecker(candidate, device=cfg.models.verifier.device)
+            device = cfg.models.verifier.device
+
+            def _load() -> NLIEntailmentChecker:
+                logger.info("Cargando verifier NLI desde %s", candidate)
+                return NLIEntailmentChecker(candidate, device=device)
+
+            nli = model_cache.get_or_create(("nli", candidate, device), _load)
             return AnswerVerifier(cfg, nli=nli)
         except Exception as exc:
             logger.warning("Verifier NLI falló (%s). Fallback léxico.", exc)

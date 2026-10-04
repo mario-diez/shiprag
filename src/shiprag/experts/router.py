@@ -1,7 +1,7 @@
 """Router de consultas → mini-expertos por zona del buque.
 
 Diseño deliberadamente conservador:
-- Patrones de emergencia → fuerza zona emergencias + modo extractivo.
+- Patrones de emergencia (`router.emergency_patterns`) → fuerza zona emergencias + modo extractivo.
 - Con embeddings reales: clasificación por similitud coseno vs frases de ejemplo.
 - Sin embeddings (lite / hash): fallback a keywords.
 - Si la confianza es baja → expert general.
@@ -21,21 +21,6 @@ from shiprag.core.schemas import ResponseMode, Zone
 from shiprag.index.embeddings import EmbeddingBackend, HashEmbedding
 
 logger = logging.getLogger("shiprag.router")
-
-EMERGENCY_PATTERNS = [
-    r"hombre\s+al\s+agua",
-    r"man\s+overboard",
-    r"\bmayday\b",
-    r"\bdistress\b",
-    r"abandono\s+del?\s+buque",
-    r"\bsopep\b",
-    r"incendio\s+en",
-    r"\bblackout\b",
-    r"inundaci[oó]n",
-    r"colisi[oó]n",
-    r"varada",
-    r"emergencia",
-]
 
 
 @dataclass
@@ -73,10 +58,17 @@ class QueryRouter:
             for z in self.cfg.zones
         }
         self._prototypes: dict[str, np.ndarray] | None = None
+        self._emergency_res = [
+            re.compile(p, re.I) for p in self.cfg.router.emergency_patterns if str(p).strip()
+        ]
 
     def _emergency(self, query: str) -> bool:
         q = query.lower()
-        return any(re.search(p, q, re.I) for p in EMERGENCY_PATTERNS)
+        return any(r.search(q) for r in self._emergency_res)
+
+    def is_emergency(self, query: str) -> bool:
+        """¿La consulta activa el override de emergencia según `router.emergency_patterns`?"""
+        return self._emergency(query)
 
     def _use_embedding(self) -> bool:
         backend = (self.cfg.router.backend or "auto").lower().strip()
