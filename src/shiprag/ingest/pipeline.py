@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
 import shutil
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from shiprag.core.config import AppConfig, ensure_runtime_dirs, load_config
@@ -16,7 +19,8 @@ from shiprag.core.schemas import (
     Zone,
 )
 from shiprag.ingest.chunker import StructuralChunker
-from shiprag.ingest.pdf_extractor import DocumentExtractor
+from shiprag.ingest.pdf_extractor import SUPPORTED_EXTENSIONS, DocumentExtractor
+from shiprag.ingest.registry import DocumentRegistry
 from shiprag.index.store import HybridIndex
 
 logger = logging.getLogger("shiprag.ingest")
@@ -187,13 +191,107 @@ def infer_criticality(zone: Zone, doc_type: DocType) -> Criticality:
     return Criticality.MEDIUM
 
 
+# Subir si cambia la lógica de extracción/chunking: fuerza reindexar todo en la siguiente ingesta
+INGEST_FORMAT_VERSION = "2"
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def source_uri_for(path: Path) -> str:
+    """Identidad estable de un fichero de origen (ruta absoluta normalizada)."""
+    return Path(path).resolve().as_posix()
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+        return True
+    except ValueError:
+        return False
+
+
 class IngestPipeline:
+    """extract → chunk → index, con ciclo de vida de documentos.
+
+    - Identidad: `doc_id` explícito del sidecar, o el que ya tenía ese fichero de
+      origen, o el nombre del fichero (con sufijo si otro fichero ya lo usa).
+    - Reingesta: sustituye la versión anterior (no deja chunks huérfanos).
+    - Sin cambios (misma huella) → se omite; `force=True` reindexa igualmente.
+    """
+
     def __init__(self, cfg: AppConfig | None = None, index: HybridIndex | None = None) -> None:
         self.cfg = cfg or load_config()
         ensure_runtime_dirs(self.cfg)
         self.extractor = DocumentExtractor(self.cfg)
         self.chunker = StructuralChunker(self.cfg)
         self.index = index or HybridIndex(self.cfg)
+        self.registry = DocumentRegistry(self.cfg.index_path / "documents")
+        self._lock = threading.RLock()
+
+    def _resolve_doc_id(self, path: Path, sidecar: dict, source_uri: str, content_hash: str) -> str:
+        if sidecar.get("doc_id"):
+            return _slug(str(sidecar["doc_id"]))
+        known = self.registry.find_by_source(source_uri)
+        if known:
+            return known
+        base = _slug(path.stem)
+        other = self.registry.get(base)
+        if other is None or not other.source_uri:
+            # Libre, o entrada de un índice anterior a este registro: se reclama
+            return base
+        if other.content_hash == content_hash and not Path(other.source_uri).exists():
+            # Mismo contenido y el original ya no está: el fichero se ha movido
+            return base
+        # Mismo nombre de fichero en otra carpeta: no pisar el otro documento
+        return f"{base}-{hashlib.sha1(source_uri.encode('utf-8')).hexdigest()[:8]}"
+
+    def _fingerprint(self, content_hash: str, sidecar: dict, overrides: dict, copy: bool) -> str:
+        payload = {
+            "format": INGEST_FORMAT_VERSION,
+            "content": content_hash,
+            "sidecar": sidecar,
+            "overrides": overrides,
+            "copy_to_raw": copy,
+            "chunking": self.cfg.chunking.model_dump(),
+            "ocr": [self.cfg.ocr.enabled, self.cfg.ocr.lang],
+            "embedder": self.index.embedder.name,
+        }
+        blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+    def _remove_raw_copy(self, meta: DocumentMeta, keep: str | None = None) -> None:
+        """Borra la copia en data/raw de una versión anterior.
+
+        Solo lo que ShipRAG gestiona: copias que hizo la ingesta (`source_path` ≠ origen) y
+        subidas por API (`data/raw/uploads`). Nunca un original ingerido en su sitio.
+        """
+        source_path = meta.source_path
+        if not source_path or source_path == keep:
+            return
+        p = Path(source_path)
+        if not p.exists() or not _is_within(p, self.cfg.raw_path):
+            return
+        uploaded = _is_within(p, self.cfg.raw_path / "uploads")
+        # Entradas de índices antiguos (sin source_uri): no se sabe si es copia → se deja
+        is_original = not meta.source_uri or source_uri_for(p) == meta.source_uri
+        if is_original and not uploaded:
+            return
+        p.unlink(missing_ok=True)
+        try:
+            if p.parent != self.cfg.raw_path and not any(p.parent.iterdir()):
+                p.parent.rmdir()
+        except OSError:
+            pass
 
     def ingest_file(
         self,
@@ -204,60 +302,111 @@ class IngestPipeline:
         title: str | None = None,
         version: str = "1.0",
         language: str = "es",
-        copy_to_raw: bool = True,
+        copy_to_raw: bool | None = None,
+        force: bool = False,
     ) -> dict:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(path)
+        if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            raise ValueError(f"Formato no soportado: {path.suffix or path.name}")
+        copy = self.cfg.ingest.copy_to_raw if copy_to_raw is None else copy_to_raw
 
-        dest = path
-        if copy_to_raw:
-            dest_dir = self.cfg.raw_path / (zone.value if zone else "inbox")
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            dest = dest_dir / path.name
-            if path.resolve() != dest.resolve():
-                shutil.copy2(path, dest)
-
-        blocks = self.extractor.extract(dest)
-        sample_text = " ".join(b.text for b in blocks[:8]) + " " + path.name
+        source_uri = source_uri_for(path)
         sidecar = _load_sidecar_meta(path)
-        z = infer_zone(sample_text, zone or _zone_from_sidecar(sidecar))
-        dt = infer_doc_type(sample_text, doc_type or _type_from_sidecar(sidecar))
-        crit = (
-            Criticality(sidecar["criticality"])
-            if sidecar.get("criticality")
-            else infer_criticality(z, dt)
-        )
-        doc_id = _slug(str(sidecar.get("doc_id") or path.stem))
-        title = title or sidecar.get("title") or path.stem.replace("_", " ")
-        version = sidecar.get("version") or version
-        language = sidecar.get("language") or language
+        content_hash = _sha256_file(path)
+        overrides = {
+            "zone": zone.value if zone else None,
+            "doc_type": doc_type.value if doc_type else None,
+            "title": title,
+            "version": version,
+            "language": language,
+        }
 
-        meta = DocumentMeta(
-            doc_id=doc_id,
-            title=title,
-            source_path=str(dest),
-            version=version,
-            zone=z,
-            doc_type=dt,
-            language=language,
-            criticality=crit,
-            tags=list(sidecar.get("tags") or []),
-            extra={k: v for k, v in sidecar.items() if k not in {
-                "doc_id", "title", "version", "zone", "doc_type", "language", "criticality", "tags"
-            }},
-        )
-        chunks = self.chunker.chunk(meta, blocks)
-        n = self.index.upsert_chunks(chunks, zone=z)
+        with self._lock:
+            doc_id = self._resolve_doc_id(path, sidecar, source_uri, content_hash)
+            fingerprint = self._fingerprint(content_hash, sidecar, overrides, copy)
+            prev = self.registry.get(doc_id)
+            if (
+                prev is not None
+                and prev.source_uri
+                and prev.source_uri != source_uri
+                and Path(prev.source_uri).exists()
+            ):
+                logger.warning(
+                    "doc_id=%s lo declaran %s y %s; esta ingesta sustituye a la anterior",
+                    doc_id,
+                    prev.source_uri,
+                    source_uri,
+                )
+            if (
+                not force
+                and prev is not None
+                and prev.ingest_fingerprint == fingerprint
+                and prev.source_uri == source_uri
+            ):
+                logger.info("Sin cambios %s (doc_id=%s) → omitido", path.name, doc_id)
+                return {
+                    "doc_id": doc_id,
+                    "title": prev.title,
+                    "zone": prev.zone.value,
+                    "doc_type": prev.doc_type.value,
+                    "criticality": prev.criticality.value,
+                    "chunks": prev.chunk_count,
+                    "source_path": prev.source_path,
+                    "action": "unchanged",
+                }
 
-        meta_path = self.cfg.index_path / "documents" / f"{doc_id}.json"
-        meta_path.parent.mkdir(parents=True, exist_ok=True)
-        meta_path.write_text(meta.model_dump_json(indent=2), encoding="utf-8")
+            dest = path
+            if copy:
+                # Subcarpeta por doc_id: dos "manual.pdf" de carpetas distintas no se pisan
+                dest_dir = self.cfg.raw_path / (zone.value if zone else "inbox") / doc_id
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest = dest_dir / path.name
+                if path.resolve() != dest.resolve():
+                    shutil.copy2(path, dest)
 
+            blocks = self.extractor.extract(dest)
+            sample_text = " ".join(b.text for b in blocks[:8]) + " " + path.name
+            z = infer_zone(sample_text, zone or _zone_from_sidecar(sidecar))
+            dt = infer_doc_type(sample_text, doc_type or _type_from_sidecar(sidecar))
+            crit = (
+                Criticality(sidecar["criticality"])
+                if sidecar.get("criticality")
+                else infer_criticality(z, dt)
+            )
+            meta = DocumentMeta(
+                doc_id=doc_id,
+                title=title or sidecar.get("title") or path.stem.replace("_", " "),
+                source_path=str(dest),
+                version=str(sidecar.get("version") or version),
+                zone=z,
+                doc_type=dt,
+                language=sidecar.get("language") or language,
+                criticality=crit,
+                tags=list(sidecar.get("tags") or []),
+                extra={k: v for k, v in sidecar.items() if k not in {
+                    "doc_id", "title", "version", "zone", "doc_type", "language", "criticality", "tags"
+                }},
+                source_uri=source_uri,
+                content_hash=content_hash,
+                ingest_fingerprint=fingerprint,
+                ingested_at=_now_iso(),
+            )
+            chunks = self.chunker.chunk(meta, blocks)
+            meta.chunk_count = len(chunks)
+            removed, added = self.index.replace_document(doc_id, chunks, zone=z)
+            self.registry.put(meta)
+            if prev is not None:
+                self._remove_raw_copy(prev, keep=str(dest))
+
+        action = "created" if prev is None else "updated"
         logger.info(
-            "Ingestado %s → %d chunks (zona=%s tipo=%s criticidad=%s)",
+            "Ingestado %s → %d chunks (%s, %d sustituidos; zona=%s tipo=%s criticidad=%s)",
             path.name,
-            n,
+            added,
+            action,
+            removed,
             z.value,
             dt.value,
             crit.value,
@@ -268,9 +417,11 @@ class IngestPipeline:
             "zone": z.value,
             "doc_type": dt.value,
             "criticality": crit.value,
-            "chunks": n,
+            "chunks": added,
             "blocks": len(blocks),
             "source_path": str(dest),
+            "action": action,
+            "chunks_replaced": removed,
         }
 
     def ingest_dir(
@@ -279,21 +430,68 @@ class IngestPipeline:
         *,
         zone: Zone | None = None,
         recursive: bool = True,
+        force: bool = False,
+        prune: bool = False,
+        copy_to_raw: bool | None = None,
     ) -> list[dict]:
+        """Ingesta un directorio. `prune=True` además retira del índice los documentos
+        que procedían de este directorio y cuyo fichero ya no existe (sincronización)."""
         directory = Path(directory)
-        patterns = ("*.pdf", "*.txt", "*.md", "*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff")
-        files: list[Path] = []
-        for pat in patterns:
-            files.extend(directory.rglob(pat) if recursive else directory.glob(pat))
-        files = sorted(set(files))
-        results = []
-        for f in files:
-            try:
-                results.append(self.ingest_file(f, zone=zone))
-            except Exception as exc:
-                logger.exception("Fallo ingesta %s: %s", f, exc)
-                results.append({"path": str(f), "error": str(exc)})
-        # Persist manifest
+        candidates = directory.rglob("*") if recursive else directory.glob("*")
+        files = sorted(
+            p
+            for p in candidates
+            if p.is_file()
+            and p.suffix.lower() in SUPPORTED_EXTENSIONS
+            and not p.name.startswith(("~$", "."))
+        )
+        results: list[dict] = []
+        # Un solo rebuild BM25 + persistencia al final del lote (antes: uno por fichero)
+        with self.index.batch():
+            for f in files:
+                try:
+                    results.append(
+                        self.ingest_file(f, zone=zone, force=force, copy_to_raw=copy_to_raw)
+                    )
+                except Exception as exc:
+                    logger.exception("Fallo ingesta %s: %s", f, exc)
+                    results.append({"path": str(f), "error": str(exc), "action": "error"})
+            if prune:
+                results.extend(self.prune(directory))
         manifest = self.cfg.index_path / "manifest.json"
         manifest.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
         return results
+
+    def prune(self, directory: Path) -> list[dict]:
+        """Retira documentos cuyo original estaba bajo `directory` y ya no existe."""
+        root = source_uri_for(directory).rstrip("/") + "/"
+        out = []
+        with self.index.batch():
+            for meta in self.registry.all():
+                if not meta.source_uri.startswith(root) or Path(meta.source_uri).exists():
+                    continue
+                res = self.delete_document(meta.doc_id)
+                res["action"] = "pruned"
+                out.append(res)
+        return out
+
+    def delete_document(self, doc_id: str) -> dict:
+        """Elimina un documento del índice y del registro. KeyError si no existe."""
+        with self._lock:
+            meta = self.registry.get(doc_id)
+            removed = self.index.delete_document(doc_id)
+            if meta is None and removed == 0:
+                raise KeyError(doc_id)
+            self.registry.remove(doc_id)
+            if meta is not None:
+                self._remove_raw_copy(meta)
+        logger.info("Documento %s eliminado (%d chunks)", doc_id, removed)
+        return {
+            "doc_id": doc_id,
+            "title": meta.title if meta else "",
+            "chunks_removed": removed,
+            "action": "deleted",
+        }
+
+    def list_documents(self) -> list[DocumentMeta]:
+        return self.registry.all()

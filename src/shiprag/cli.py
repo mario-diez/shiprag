@@ -1,4 +1,4 @@
-"""CLI local: ingest / query / serve / eval / profiles."""
+"""CLI local: ingest / documents / delete / query / serve / eval / profiles."""
 
 from __future__ import annotations
 
@@ -26,12 +26,60 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     pipe = IngestPipeline(cfg)
     zone = Zone(args.zone) if args.zone else None
     path = Path(args.path)
+    copy = False if args.no_copy else None
     if path.is_dir():
-        results = pipe.ingest_dir(path, zone=zone)
+        results = pipe.ingest_dir(
+            path, zone=zone, force=args.force, prune=args.prune, copy_to_raw=copy
+        )
     else:
-        results = [pipe.ingest_file(path, zone=zone)]
+        if args.prune:
+            print("--prune solo aplica a directorios; se ignora", file=sys.stderr)
+        results = [pipe.ingest_file(path, zone=zone, force=args.force, copy_to_raw=copy)]
     print(json.dumps(results, ensure_ascii=False, indent=2))
+    summary: dict[str, int] = {}
+    for r in results:
+        summary[r.get("action", "?")] = summary.get(r.get("action", "?"), 0) + 1
+    print(json.dumps({"summary": summary}, ensure_ascii=False), file=sys.stderr)
+    return 1 if summary.get("error") else 0
+
+
+def cmd_documents(args: argparse.Namespace) -> int:
+    from shiprag.ingest.registry import DocumentRegistry
+
+    cfg = _cfg(args)
+    docs = DocumentRegistry(cfg.index_path / "documents").all()
+    rows = [
+        {
+            "doc_id": d.doc_id,
+            "title": d.title,
+            "zone": d.zone.value,
+            "version": d.version,
+            "chunks": d.chunk_count,
+            "ingested_at": d.ingested_at,
+            "source": d.source_uri or d.source_path,
+        }
+        for d in docs
+    ]
+    print(json.dumps(rows, ensure_ascii=False, indent=2))
     return 0
+
+
+def cmd_delete(args: argparse.Namespace) -> int:
+    from shiprag.ingest.pipeline import IngestPipeline
+
+    cfg = _cfg(args)
+    setup_logging(cfg)
+    pipe = IngestPipeline(cfg)
+    code = 0
+    out = []
+    for doc_id in args.doc_ids:
+        try:
+            out.append(pipe.delete_document(doc_id))
+        except KeyError:
+            out.append({"doc_id": doc_id, "action": "not_found"})
+            code = 1
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    return code
 
 
 def cmd_query(args: argparse.Namespace) -> int:
@@ -173,7 +221,25 @@ def build_parser() -> argparse.ArgumentParser:
     ing = sub.add_parser("ingest", help="Ingestar documento(s)")
     ing.add_argument("path", help="Archivo o directorio")
     ing.add_argument("--zone", default=None, help="Zona forzada")
+    ing.add_argument(
+        "--force", action="store_true", help="Reindexar aunque el documento no haya cambiado"
+    )
+    ing.add_argument(
+        "--prune",
+        action="store_true",
+        help="Retirar del índice los documentos de este directorio cuyo fichero ya no existe",
+    )
+    ing.add_argument(
+        "--no-copy", action="store_true", help="No copiar los originales a data/raw"
+    )
     ing.set_defaults(func=cmd_ingest)
+
+    sub.add_parser("documents", help="Listar documentos indexados").set_defaults(
+        func=cmd_documents
+    )
+    de = sub.add_parser("delete", help="Eliminar documento(s) del índice por doc_id")
+    de.add_argument("doc_ids", nargs="+", help="doc_id (ver `shiprag documents`)")
+    de.set_defaults(func=cmd_delete)
 
     q = sub.add_parser("query", help="Consultar el sistema")
     q.add_argument("query", help="Pregunta")

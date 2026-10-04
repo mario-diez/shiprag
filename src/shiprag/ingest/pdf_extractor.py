@@ -34,6 +34,11 @@ WARNING_RE = re.compile(
 )
 LIST_RE = re.compile(r"^\s*(?:\d+[\.\)]\s+|[-•▪]\s+|[a-z][\.\)]\s+)")
 
+IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"})
+TEXT_EXTENSIONS = frozenset({".txt", ".md"})
+# Única fuente de verdad de lo que `DocumentExtractor.extract` sabe leer
+SUPPORTED_EXTENSIONS = frozenset({".pdf"}) | IMAGE_EXTENSIONS | TEXT_EXTENSIONS
+
 
 def _looks_like_heading(line: str) -> bool:
     s = line.strip()
@@ -54,9 +59,9 @@ class DocumentExtractor:
         suffix = path.suffix.lower()
         if suffix == ".pdf":
             return self._extract_pdf(path)
-        if suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}:
+        if suffix in IMAGE_EXTENSIONS:
             return self._extract_image(path)
-        if suffix in {".txt", ".md"}:
+        if suffix in TEXT_EXTENSIONS:
             return self._extract_text(path)
         raise ValueError(f"Formato no soportado: {suffix}")
 
