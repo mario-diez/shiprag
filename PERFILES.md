@@ -258,6 +258,11 @@ pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-c
 # pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
 ```
 
+> **Ojo:** el wheel `cpu` **ignora `n_gpu_layers`**: el LLM corre en CPU aunque el perfil diga GPU
+> (con un 1,5B, 4–15 s por respuesta). `shiprag --profile <perfil> doctor` lo avisa (`llm_gpu`).
+> Alternativa sin compilar: servir el modelo con Ollama y apuntar ShipRAG a él
+> ([docs/LLM.md §6.2](docs/LLM.md#62-ollama-la-vía-más-rápida-en-windows-con-gpu)).
+
 Luego, si quieres el extra del proyecto sin recompilar:
 
 ```powershell

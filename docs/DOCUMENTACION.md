@@ -2,7 +2,7 @@
 
 **Versión del MVP:** 0.1.0  
 **Rama:** `cursor/shiprag-offline-mvp-a2a3`  
-**Fecha de esta documentación:** 2026-08-10  
+**Fecha de esta documentación:** 2026-08-10 (actualizada 2026-10-04: ver [NOVEDADES.md](NOVEDADES.md))  
 
 Este documento describe **cómo se ha montado** el sistema, **qué hay implementado**, **cómo usarlo**, **qué falta** y **cuáles son los próximos pasos** recomendados. Está pensado tanto para retomar el trabajo en un PC de casa como para una eventual puesta en marcha a bordo.
 
@@ -11,7 +11,10 @@ Documentos complementarios (más cortos):
 | Documento | Contenido |
 |---|---|
 | [README.md](../README.md) | Visión general + quickstart |
-| [NOVEDADES.md](NOVEDADES.md) | **Router embeddings, NLI, zona DP, tiers WS/server** |
+| [NOVEDADES.md](NOVEDADES.md) | **Fundamentos para escalar (2026-10)**; router embeddings, NLI, zona DP, tiers WS/server |
+| [AUDITORIA_ESCALADO.md](AUDITORIA_ESCALADO.md) | Lo que hay, hallazgos y mediciones para uso en empresa |
+| [PLAN_EMPRESA.md](PLAN_EMPRESA.md) | Plan por fases: escala, permisos, conectores, calidad |
+| [LLM.md](LLM.md) | Papel del LLM, problemas encontrados, servido (vLLM/Ollama), modelos |
 | [QUICKSTART_CASA.md](../QUICKSTART_CASA.md) | Arranque en 5 minutos en PC |
 | [DESCARGA_PC.md](../DESCARGA_PC.md) | Pasar del Cloud Agent al PC |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Decisiones técnicas resumidas |
@@ -135,7 +138,8 @@ Usuario (UI / CLI / API)
 5. Chunking **estructural** (por sección / procedimiento), no solo ventana fija  
 6. Metadatos: `doc_id`, versión, zona, tipo, idioma, criticidad, páginas, sección  
 7. Sidecar opcional `*.meta.yaml` para forzar metadatos  
-8. Indexado dual por zona: BM25 + Chroma (o fallback denso)
+8. Identidad estable (`doc_id` por fichero de origen) y huella: si no cambió, se omite  
+9. Indexado dual por zona: BM25 + Chroma (o fallback denso), **sustituyendo** la versión anterior
 
 ### 3.2 Flujo de consulta
 
@@ -144,7 +148,7 @@ Usuario (UI / CLI / API)
 3. Rerank (cross-encoder o lexical)  
 4. Generación según modo  
 5. Verificación: evidencia + relevancia query↔doc + grounding  
-6. Persistencia de trace en `data/logs/trace_*.json`
+6. Persistencia de trace en `data/logs/trace-YYYYMMDD.jsonl` (una línea por consulta)
 
 ---
 
@@ -232,8 +236,10 @@ Colocar como `mi_documento.meta.yaml` junto al fichero.
 | Fichero | Responsabilidad |
 |---|---|
 | `embeddings.py` | `HashEmbedding` (lite) o `SentenceTransformer` (home/WS/server); `fallback_name_or_path` |
-| `lexical.py` | BM25 persistente por zona (`lexical.jsonl`) |
-| `store.py` | `DenseStore` (Chroma o fallback) + `HybridIndex` multi-zona |
+| `lexical.py` | BM25 persistente por zona (`lexical.jsonl`); snapshot inmutable para lecturas, commit diferido en lotes |
+| `store.py` | `DenseStore` (Chroma o fallback) + `HybridIndex` multi-zona: `replace_document`, `delete_document`, `batch()` |
+
+Registro de documentos: `src/shiprag/ingest/registry.py` (`<índice>/documents/<doc_id>.json`).
 
 Los chunks de cada zona se espejan también en `general` para consultas globales, pero el orquestador **evita consultar `general`** si ya hay expertos de dominio (para no contaminar).
 
@@ -258,7 +264,8 @@ Zona DP: consultas no urgentes de thrusters / watch circle / PRS → `posicionam
 
 | Fichero | Responsabilidad |
 |---|---|
-| `generator.py` | Extractivo / semi / citations_only; LLM GGUF opcional (+ `fallback_name_or_path`) |
+| `generator.py` | Extractivo / semi / citations_only; LLM opcional: GGUF en proceso o servidor compatible OpenAI ([LLM.md](LLM.md)) |
+| `condense.py` | Reescritura de preguntas de seguimiento del chat |
 | `verifier.py` | Léxico (evidencia, qrel, grounding) + NLI opcional (`build_verifier`) |
 
 **Verifier NLI** (`models.verifier`): si `backend=auto|nli` y hay pesos mDeBERTa, la respuesta solo se acepta si pasa el umbral léxico **y** entailment evidencia→afirmación. En `lite` o si falla la carga → solo léxico.
@@ -281,7 +288,8 @@ En emergencia, **bloquea** `generative` y fuerza extractivo.
 ### 5.8 API + UI — `src/shiprag/api/` + `ui/static/`
 
 - FastAPI en `127.0.0.1:8080` (configurable)
-- Endpoints: `/api/health`, `/api/profiles`, `/api/zones`, `/api/query`, `/api/ingest`, `/api/documents`
+- Endpoints: `/api/health`, `/api/profiles`, `/api/zones`, `/api/query`, `/api/ingest`, `/api/documents`, `DELETE /api/documents/{doc_id}`
+- Escritura (`/api/ingest`, `DELETE`) protegida con `Authorization: Bearer` si `SHIPRAG_ADMIN_TOKEN` está definido
 - **API OpenAI-compatible** para Open WebUI: `/v1/models`, `/v1/chat/completions` (ver [OPENWEBUI.md](OPENWEBUI.md))
 - UI: consulta, chips de ejemplo, botón **EMERGENCIA · solo citas**, ingesta, citas, trace
 
@@ -290,7 +298,9 @@ En emergencia, **bloquea** `generative` y fuerza extractivo.
 ```text
 shiprag --profile lite|home|server <comando>
 
-ingest <path> [--zone]
+ingest <path> [--zone] [--force] [--prune] [--no-copy]
+documents
+delete <doc_id> [<doc_id> ...]
 query "..." [--emergency] [--mode ...]
 serve [--host] [--port]
 eval eval/golden_set.jsonl
@@ -452,7 +462,7 @@ python scripts/pack_for_home.py
 - [ ] LLM local por defecto  
 - [ ] VLM para planos/P&ID  
 - [ ] Repo GitHub remoto enlazado a este agente  
-- [ ] Auth / multi-usuario / RBAC  
+- [ ] Auth / multi-usuario / RBAC — parcial: token de administración para escritura (2026-10); faltan SSO y permisos por usuario ([PLAN_EMPRESA.md](PLAN_EMPRESA.md))  
 - [ ] Firma/integridad criptográfica de manuales  
 - [ ] Ajuste fino de `examples` del router con logs reales  
 - [ ] HITL de validación de citas  
@@ -619,7 +629,7 @@ Antes de quedarse sin internet:
 | `doctor` falla deps | `pip install -e ".[dev]"` dentro del venv |
 | Índices raros tras cambiar perfil | Cada perfil tiene carpeta propia; re-ingerir |
 
-Logs y traces: `data/logs/shiprag.log`, `data/logs/trace_*.json`.
+Logs y traces: `data/logs/shiprag.log`, `data/logs/trace-YYYYMMDD.jsonl` (formato anterior con `logging.trace_format: json`).
 
 ---
 

@@ -17,3 +17,4 @@ models/**
 .DS_Store
 *.gguf
 .mypy_cache/
+config/local.yaml

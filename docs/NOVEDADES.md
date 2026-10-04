@@ -1,11 +1,93 @@
-# Novedades ShipRAG — router, verifier NLI, zona DP y tiers de modelos
+# Novedades ShipRAG
 
-Documento de referencia de las mejoras recientes respecto al MVP inicial.
+Documento de referencia de las mejoras respecto al MVP inicial (lo más reciente primero).
 Complementa [ARCHITECTURE.md](ARCHITECTURE.md) y [DOCUMENTACION.md](DOCUMENTACION.md).
 
-**Fecha:** 2026-08-10
+---
+
+# 2026-10-04 — Fundamentos para escalar (rama `feat/fundamentos-escalado`)
+
+Fase 1 del [plan de empresa](PLAN_EMPRESA.md). Motivo y mediciones: [AUDITORIA_ESCALADO.md](AUDITORIA_ESCALADO.md).
+Todo lo relativo al LLM: [LLM.md](LLM.md).
+
+## Resumen
+
+| Pieza | Antes | Ahora |
+|---|---|---|
+| Reingesta de un documento modificado | Los chunks viejos **se quedaban** junto a los nuevos | Sustituye la versión anterior (BM25 + vectores, zona + general) |
+| Documento sin cambios | Se reprocesaba entero | Se omite (huella de contenido + metadatos + config); `--force` para forzar |
+| Borrar / sincronizar | No había | `shiprag delete <doc_id>`, `DELETE /api/documents/{doc_id}`, `ingest <dir> --prune` |
+| Mismo nombre en dos carpetas | Se pisaban (`doc_id` = nombre; copia en `data/raw/inbox/<nombre>`) | `doc_id` estable por fichero de origen, con sufijo si colisiona; copia en `data/raw/<zona>/<doc_id>/` |
+| Embeddings por chunk | 2 cálculos (zona + espejo general) | 1 |
+| BM25 al ingerir un directorio | Reconstrucción completa por **cada** fichero | Una por lote; lecturas sobre snapshot; escritura atómica |
+| Modelos en memoria | Reranker cargado por zona; todo recargado por orquestador | Una carga por proceso (`core/model_cache.py`) |
+| Subida por API | Ruta del cliente sin sanear, sin límite, sin auth | Nombre saneado, tipos permitidos, `max_upload_mb`, token de administración |
+| Concurrencia | Ingesta y chat bloqueaban el event loop; LLM sin bloqueo | Trabajo pesado en hilos; llama.cpp serializado; init sin carreras |
+| LLM | Prompt crudo, citas recortadas a 500 chars, solo llama.cpp en proceso | Plantilla de chat, evidencia completa con presupuesto, limpieza, backend HTTP (vLLM/Ollama/nube) |
+| Chat (Open WebUI) | Solo el último mensaje | Preguntas de seguimiento reescritas; emergencia heredada |
+| Override de emergencia | Lista fija en código | `router.emergency_patterns` (vacío = desactivado) |
+| Traces | Un JSON por consulta, sin retención | `trace-YYYYMMDD.jsonl` + `logging.trace_retention_days` |
+| Tests | 13 | 57 |
+
+## Notas de migración (léelas antes de actualizar)
+
+1. **La primera ingesta tras actualizar reindexa todo una vez**: los índices antiguos no tienen
+   huella, así que cada documento se procesa de nuevo y **sustituye** a su versión antigua (no se
+   duplica). A partir de ahí, solo cambia lo que cambia.
+2. **`doc_id` con sufijo en colisiones**: si dos ficheros distintos tenían el mismo nombre (en el
+   corpus de ejemplo, `x.txt` y `pdf/x.pdf`), el segundo pasa a `x-<hash8>`. Antes compartían
+   `doc_id` y el registro de uno pisaba al del otro. Un `doc_id` explícito en el sidecar
+   `.meta.yaml` sigue mandando (y sustituye a quien lo tuviera, con aviso en el log).
+3. **Copias en `data/raw`**: ahora en `data/raw/<zona|inbox>/<doc_id>/<fichero>`. Pueden quedar
+   copias huérfanas del formato antiguo en `data/raw/inbox/`; se pueden borrar a mano.
+4. **Traces**: `data/logs/trace-YYYYMMDD.jsonl` (una línea por consulta). Para volver al formato
+   anterior: `logging.trace_format: json`.
+5. **Token de administración**: si defines `SHIPRAG_ADMIN_TOKEN`, la ingesta y el borrado exigen
+   `Authorization: Bearer <token>` (la UI muestra un campo para él). Consultar sigue abierto.
+   Sin la variable, todo funciona como antes y se avisa en el log y en `doctor`.
+6. **API**: tipo no soportado → 415; fichero mayor que `api.max_upload_mb` → 413; zona o tipo
+   inválidos → 400 (antes 500). `/api/health` añade `generator`, `documents` y
+   `write_protected`; las respuestas añaden `generation_info`.
+7. **Overrides locales**: `SHIPRAG_LOCAL_CONFIG=config/local.yaml` aplica un YAML encima del
+   perfil (p.ej. LLM en Ollama). Plantilla: `config/local.example.yaml`.
+8. **Un solo escritor por índice** (como antes): con `shiprag serve` en marcha, ingerir por la API.
+   Una ingesta por CLI sobre el mismo índice no la ve el servidor hasta reiniciarlo.
+
+## Comandos nuevos
+
+```bash
+shiprag --profile lite ingest data/sample            # incremental: omite lo que no cambió
+shiprag --profile lite ingest data/sample --force    # reindexar todo
+shiprag --profile lite ingest /ruta/docs --prune     # además retira lo borrado del origen
+shiprag --profile lite ingest /ruta/docs --no-copy   # no duplicar originales en data/raw
+shiprag --profile lite documents                     # listar documentos indexados
+shiprag --profile lite delete <doc_id> [<doc_id>…]   # eliminar del índice
+python scripts/bench_index.py --docs 100 500         # benchmark del índice embebido
+```
+
+```bash
+# API
+curl -X DELETE -H "Authorization: Bearer $SHIPRAG_ADMIN_TOKEN" http://127.0.0.1:8080/api/documents/<doc_id>
+curl -H "Authorization: Bearer $SHIPRAG_ADMIN_TOKEN" -F file=@manual.pdf -F force=true http://127.0.0.1:8080/api/ingest
+```
+
+## Configuración nueva (`config/default.yaml`)
+
+| Clave | Por defecto | Para qué |
+|---|---|---|
+| `models.llm.backend` | `llama_cpp` | `openai_compat` → servidor HTTP (vLLM, Ollama, nube) |
+| `models.llm.base_url` / `model` / `api_key_env` / `timeout_s` | vacío / vacío / vacío / 60 | Backend HTTP; la key se lee de la variable indicada |
+| `models.llm.system_prompt` / `prompt_suffix` | vacío | Prompt propio; `/no_think` para Qwen3 (puesto en `server`) |
+| `models.llm.context_max_chars` | 0 (auto) | Presupuesto de evidencia para el LLM |
+| `router.emergency_patterns` | lista del buque | `[]` desactiva el override de emergencia |
+| `chat.condense_followups` / `use_llm_rewrite` / `history_turns` / `followup_max_terms` | true / true / 3 / 6 | Seguimientos en `/v1/chat/completions` |
+| `ingest.copy_to_raw` | true | Copiar originales a `data/raw` |
+| `api.admin_token_env` / `max_upload_mb` | `SHIPRAG_ADMIN_TOKEN` / 200 | Protección de escritura y tope de subida |
+| `logging.trace_format` / `trace_retention_days` | `jsonl` / 0 | Formato y retención de traces |
 
 ---
+
+# 2026-08-10 — Router, verifier NLI, zona DP y tiers de modelos
 
 ## Resumen
 

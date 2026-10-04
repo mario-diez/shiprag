@@ -4,8 +4,12 @@ Sistema RAG **100% offline** orientado a consultas de alta precisión sobre manu
 procedimientos de emergencia, planos, listas de chequeo y documentación técnica naval.
 
 **Documentación completa:** [docs/DOCUMENTACION.md](docs/DOCUMENTACION.md)  
-**Novedades (router embeddings, NLI, zona DP, tiers):** [docs/NOVEDADES.md](docs/NOVEDADES.md)  
+**Novedades (fundamentos para escalar, router, NLI, zona DP, tiers):** [docs/NOVEDADES.md](docs/NOVEDADES.md)  
 (cómo está montado, inventario, uso, qué falta y próximos pasos)
+
+**Uso en empresa (mucha documentación, muchos usuarios):**
+[auditoría de escalado](docs/AUDITORIA_ESCALADO.md) (lo que hay y lo que falla, con mediciones) ·
+[plan por fases](docs/PLAN_EMPRESA.md) · [LLM: qué hace falta](docs/LLM.md)
 
 **Prioridad de diseño:** reducir alucinaciones y abstenerse cuando no haya evidencia,
 no maximizar “fluidez” de respuesta.
@@ -119,7 +123,7 @@ Cada zona tiene colección propia + reglas (p.ej. emergencias → modo extractiv
 | Embeddings | `sentence-transformers` (E5 / BGE-M3) | Descarga **en puerto**; runtime offline |
 | Reranker | Cross-encoder local | Fallback lexical si no hay modelo |
 | Verifier | Léxico + NLI opcional (mDeBERTa) | Lite = solo léxico |
-| LLM | Opcional `llama-cpp-python` + GGUF | No obligatorio: modo extractivo funciona solo |
+| LLM | Opcional: `llama-cpp-python` + GGUF, o servidor compatible OpenAI (vLLM, Ollama…) | No obligatorio: modo extractivo funciona solo. Ver [docs/LLM.md](docs/LLM.md) |
 | PDF | PyMuPDF + pdfplumber | Texto + tablas |
 | OCR | Tesseract (opcional) | Planos/escaneados |
 | UI | HTML/JS servida por FastAPI | Sin dependencias cloud |
@@ -176,6 +180,12 @@ shiprag --profile lite serve --port 8080
 shiprag --profile lite runtime
 shiprag profiles
 
+# Ciclo de vida de documentos (la ingesta es incremental: omite lo que no cambió)
+shiprag --profile lite ingest data/sample --prune   # + retira lo borrado del directorio
+shiprag --profile lite ingest data/sample --force   # reindexar aunque no haya cambios
+shiprag --profile lite documents                    # listar
+shiprag --profile lite delete <doc_id>              # eliminar del índice
+
 # --- Más adelante, con modelos pequeños locales ---
 python scripts/download_models.py --profile home
 shiprag --profile home ingest data/sample
@@ -198,6 +208,11 @@ shiprag --profile lite eval eval/golden_set.jsonl
 ```
 
 También puedes fijar el perfil por entorno: `export SHIPRAG_PROFILE=lite`.
+Overrides locales sin tocar ficheros versionados (p.ej. LLM en Ollama/vLLM):
+`export SHIPRAG_LOCAL_CONFIG=config/local.yaml` (plantilla en `config/local.example.yaml`).
+
+Protección de escritura: con `SHIPRAG_ADMIN_TOKEN` definido, `POST /api/ingest` y
+`DELETE /api/documents/{doc_id}` exigen `Authorization: Bearer <token>`.
 
 Cada perfil usa su propio `data/indexes/<perfil>/` para no mezclar embeddings distintos.
 
@@ -236,13 +251,19 @@ eval/             # banco de evaluación + métricas
    afinarse con consultas reales de la tripulación; sin corpus DP el experto DP recupera poco.
 5. **Diagramas/figuras** se indexan por caption + OCR de página; no hay VLM offline
    por defecto (añadible después con un modelo vision local cuantizado).
+6. **Escala y permisos:** el índice embebido (Chroma + BM25 en memoria, por zona) está pensado
+   para la documentación de un buque. No hay permisos por usuario ni conectores a SharePoint/Drive.
+   Para una empresa, ver [docs/AUDITORIA_ESCALADO.md](docs/AUDITORIA_ESCALADO.md) y
+   [docs/PLAN_EMPRESA.md](docs/PLAN_EMPRESA.md).
 
 ---
 
 ## 9. Roadmap post-MVP
 
 - Afinar `examples`/keywords del router con logs de consultas reales.
-- Versionado documental con invalidación de índice.
+- ~~Versionado documental con invalidación de índice~~ → hecho: la reingesta sustituye versiones,
+  ingesta incremental, borrado y `--prune` ([NOVEDADES](docs/NOVEDADES.md)).
+- Evolución a asistente documental de empresa: [docs/PLAN_EMPRESA.md](docs/PLAN_EMPRESA.md).
 - Firma/integridad de manuales (hash + allowlist).
 - UI de revisión humana (HITL) para validar citas críticas.
 - Export de traces a bitácora ISM.

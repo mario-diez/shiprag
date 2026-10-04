@@ -18,15 +18,16 @@ Por eso el MVP **prioriza abstención y citas** sobre fluidez conversacional.
 6. **Grounding léxico** sobre la evidencia.
 7. **NLI entailment** opcional (segunda capa del verifier).
 8. **Umbrales** distintos normal vs emergencia.
-9. **Trace persistente** en `data/logs/trace_*.json` para auditoría ISM.
+9. **Trace persistente** en `data/logs/trace-YYYYMMDD.jsonl` para auditoría ISM.
 
 ## Por qué no “solo un LLM con los PDFs”
 
 Un LLM puede resumir mal un SOPEP, reordenar pasos o mezclar versiones.
 En emergencias el modo `extractive` / `citations_only` **pega el texto del manual**.
 
-El LLM local (GGUF) es opcional. Si se activa, sigue obligado a anclarse a citas
-y pasa por el verificador (léxico ± NLI); si falla grounding, se abstiene.
+El LLM (GGUF local o servidor compatible OpenAI) es opcional. Si se activa, sigue obligado
+a anclarse a citas y pasa por el verificador (léxico ± NLI); si falla grounding, se abstiene.
+Detalles y problemas corregidos: [LLM.md](LLM.md).
 
 ## Modelos recomendados (descarga en puerto)
 

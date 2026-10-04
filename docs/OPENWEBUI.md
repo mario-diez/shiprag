@@ -81,9 +81,22 @@ curl -s http://127.0.0.1:8080/v1/chat/completions \
   }' | python -m json.tool
 ```
 
+## Conversación: preguntas de seguimiento
+
+ShipRAG recibe toda la conversación de Open WebUI. Si la última pregunta es un seguimiento
+(“¿y si no arranca?”, “¿por qué?”, “¿cuál es la presión de eso?”), la reescribe como consulta
+autónoma antes de buscar (con el LLM si está activo; si no, anteponiendo la pregunta anterior) y
+lo indica al pie: `Consulta interpretada (…): «…»`. Si la conversación venía de una emergencia,
+el seguimiento **hereda el modo emergencia** y no se deja reescribir al LLM.
+Configuración: sección `chat` de `config/default.yaml`.
+
 ## Importante (seguridad)
 
 - Open WebUI aquí es **solo la carcasa visual**.
 - Quien decide y se abstiene sigue siendo **ShipRAG**.
 - En emergencias usa el modelo `shiprag-emergency` (solo citas).
 - No actives un LLM cloud detrás de Open WebUI si quieres modo air-gap.
+- Open WebUI solo consulta (lectura). Si defines `SHIPRAG_ADMIN_TOKEN`, la ingesta y el borrado
+  de ShipRAG exigen ese token; el chat no se ve afectado.
+- `WEBUI_AUTH: "false"` es solo para pruebas locales. En una empresa: Open WebUI con SSO y
+  ShipRAG accesible únicamente desde Open WebUI (ver [PLAN_EMPRESA.md](PLAN_EMPRESA.md), Fase 3).

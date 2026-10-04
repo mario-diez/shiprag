@@ -1,0 +1,40 @@
+# Overrides locales (no versionados) que se aplican ENCIMA del perfil elegido.
+#
+#   cp config/local.example.yaml config/local.yaml      # config/local.yaml está en .gitignore
+#   export SHIPRAG_LOCAL_CONFIG=config/local.yaml        # Windows: $env:SHIPRAG_LOCAL_CONFIG="config/local.yaml"
+#   shiprag --profile balanced doctor                    # comprueba que el LLM responde
+#
+# Descomenta UNA de las opciones. Las listas se reemplazan enteras (no se fusionan).
+
+# --- A) LLM servido por Ollama en esta máquina (usa la GPU aunque llama-cpp-python sea CPU) ---
+# models:
+#   llm:
+#     enabled: true
+#     backend: openai_compat
+#     base_url: http://127.0.0.1:11434/v1
+#     model: qwen2.5:7b-instruct          # el nombre exacto que muestra `ollama list`
+#     n_ctx: 8192                         # debe coincidir con el contexto configurado en el servidor
+#     max_tokens: 512
+
+# --- B) vLLM / llama.cpp server / TGI en un servidor de inferencia de la empresa ---
+# models:
+#   llm:
+#     enabled: true
+#     backend: openai_compat
+#     base_url: http://inferencia.interna:8000/v1
+#     model: Qwen/Qwen2.5-14B-Instruct
+#     api_key_env: SHIPRAG_LLM_API_KEY    # la key se lee de esta variable de entorno
+#     timeout_s: 120
+#     n_ctx: 16384
+
+# --- C) Documentación de oficina: sin override de emergencia ---
+# router:
+#   emergency_patterns: []
+
+# --- D) No duplicar los originales en data/raw ---
+# ingest:
+#   copy_to_raw: false
+
+# --- E) Retención de traces (consultas de usuarios = posibles datos personales) ---
+# logging:
+#   trace_retention_days: 90

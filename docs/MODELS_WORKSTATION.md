@@ -104,6 +104,9 @@ pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-c
 # CUDA ejemplo: .../whl/cu121
 ```
 
+El wheel `cpu` ignora `n_gpu_layers` (el LLM corre en CPU); para GPU usa el índice `cuXXX` o
+sirve el modelo con Ollama/vLLM. `shiprag doctor` lo comprueba. Detalles: [LLM.md](LLM.md).
+
 Ver también [PERFILES.md](../PERFILES.md).
 
 ## Sobre “lo de Qwen que montaste antes”
